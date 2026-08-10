@@ -1,3 +1,6 @@
 .build/
 dist/
 .DS_Store
+
+# Working notes. The README is the public document; context.md is the local one.
+context.md
