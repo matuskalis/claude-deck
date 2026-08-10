@@ -5,6 +5,7 @@ struct MenuContent: View {
     let store: SessionStore
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var search = ""
+    @State private var showDormant = false
 
     private var filtered: [Session] {
         guard !search.isEmpty else { return store.sessions }
@@ -38,8 +39,13 @@ struct MenuContent: View {
 
                         ScrollView {
                             VStack(alignment: .leading, spacing: 0) {
-                                ForEach(filtered) { session in
+                                ForEach(filtered.filter { !$0.isDormant(now: context.date) }) { session in
                                     SessionRow(session: session, now: context.date)
+                                }
+
+                                let dormant = filtered.filter { $0.isDormant(now: context.date) }
+                                if !dormant.isEmpty {
+                                    dormantGroup(dormant, now: context.date)
                                 }
                             }
                             .padding(.vertical, 3)
@@ -68,6 +74,42 @@ struct MenuContent: View {
         .onAppear {
             store.menuOpened()
             launchAtLogin = SMAppService.mainApp.status == .enabled
+        }
+    }
+
+    /// Terminal tabs left open days ago are most of the list on a normal machine, and they
+    /// push the two sessions actually doing something off the top of it.
+    private func dormantGroup(_ dormant: [Session], now: Date) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Button {
+                    showDormant.toggle()
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: showDormant ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 8))
+                        Text("\(dormant.count) dormant")
+                        Text("idle over 12h").foregroundStyle(.tertiary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                Spacer(minLength: 4)
+                Button("Quit all") { Launcher.quit(dormant) }
+                    .controlSize(.small)
+            }
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+
+            if showDormant {
+                ForEach(dormant) { session in
+                    SessionRow(session: session, now: now)
+                        .opacity(0.65)
+                }
+            }
         }
     }
 
@@ -166,6 +208,18 @@ struct MenuContent: View {
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
 
+            if !Installer.isInstalled {
+                HStack {
+                    Label("Running from dist/", systemImage: "shippingbox")
+                        .foregroundStyle(Severity.warning.color)
+                    Spacer()
+                    Button("Install") { Installer.installAndRelaunch() }
+                        .controlSize(.small)
+                }
+                .font(.system(size: 11))
+                .help("Copy to ~/Applications and restart there, so it survives a rebuild and can launch at login")
+            }
+
             if store.notificationsBlocked {
                 HStack {
                     Label("Notifications are turned off", systemImage: "bell.slash")
@@ -214,13 +268,10 @@ struct MenuContent: View {
     /// Registering only sticks from a stable location; from `dist/` the path moves on
     /// the next build and login would silently start a stale copy.
     private func setLaunchAtLogin(_ enabled: Bool) {
-        let path = Bundle.main.bundlePath
-        let installed = path.hasPrefix("/Applications/")
-            || path.hasPrefix(NSHomeDirectory() + "/Applications/")
-        guard installed else {
+        guard Installer.isInstalled else {
             Launcher.alert(
                 "Install Claude Deck first",
-                "Launch at login needs the app in a stable location. Run `make install` to put it in ~/Applications, then open that copy and switch this on.\n\nRunning from: \(path)"
+                "Launch at login needs the app in a stable location. Press Install above to copy it to ~/Applications and restart there, then switch this on.\n\nRunning from: \(Bundle.main.bundlePath)"
             )
             return
         }

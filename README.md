@@ -19,6 +19,7 @@ the terminal a session is running in, and starts new ones.
 │ ● fix-shorts-water…  Bash 4m12s  ◕ 72%     │
 │   ~/projects/shorts-engine  "fix the…"     │
 │ ○ matuskalis-4d  stale  idle     ◔ 31%     │
+│ ▸ 12 dormant  idle over 12h      [Quit all]│
 │────────────────────────────────────────────│
 │ Background jobs                          2 │
 │ ● fix-shorts-watermark…  blocked     1.9M  │
@@ -71,6 +72,28 @@ around the built binary.
 
 The app is `LSUIElement`, so it has no Dock icon or window; everything lives in the
 menu bar item.
+
+There is no signed download, and there will not be one: this is built from source. Because
+you build it locally the bundle carries no quarantine attribute, so Gatekeeper does not
+stand in the way — `make install` and open it. It is ad-hoc signed, which is enough for
+local use and not enough to distribute, which is fine, because it is not distributed.
+
+## Dormant sessions
+
+A machine that has been used for a week accumulates terminal tabs with a live but
+long-abandoned `claude` in them. Measured here: 14 live sessions, 2 of them doing anything,
+9 untouched for more than three days. Left alone, the list is mostly noise and the two that
+matter are pushed off the top of it.
+
+Anything idle for more than 12 hours is therefore folded into a single collapsed row.
+Twelve hours rather than "not touched today", which would collapse the whole list the
+moment midnight passed and put it back at breakfast.
+
+**Quit all** on that row sends `SIGTERM` — never `SIGKILL` — to the dormant sessions only,
+after a confirmation listing them. Each one gets to write out its transcript and remove its
+session file, so the conversation is still there under `claude -c` in the same directory.
+Busy sessions, sessions waiting on a permission prompt, and background jobs are never
+included, whatever the list is filtered to.
 
 ## The menu bar item
 
@@ -285,9 +308,14 @@ rate.
 ## Launch at login
 
 `SMAppService.mainApp` behind a checkbox. It only registers when the app is running from
-`/Applications` or `~/Applications`; from `dist/` it explains that you need `make install`
-first, because registering a path that moves on the next build would silently start a
-stale copy at login.
+`/Applications` or `~/Applications`, because registering a path that moves on the next
+build would silently start a stale copy at login.
+
+Running from `dist/` the footer says so and offers **Install**, which `ditto`s the bundle
+to `~/Applications`, starts the copy and quits itself. `ditto` rather than a file copy,
+matching the Makefile: it is the copy that reliably preserves the code signature, and a
+broken signature means macOS refuses to launch the result. Until that has happened the app
+does not survive a reboot at all, which was worth a button rather than a terminal step.
 
 ## Permission prompts need hooks
 

@@ -37,6 +37,22 @@ enum Launcher {
         }
     }
 
+    /// Ends abandoned sessions with SIGTERM, never SIGKILL: Claude Code gets to write out
+    /// its transcript and remove its session file, and the conversation stays resumable
+    /// with `claude -c`. Only ever called with sessions the menu classified as dormant.
+    static func quit(_ sessions: [Session]) {
+        guard !sessions.isEmpty else { return }
+        let names = sessions.prefix(8).map(\.name).joined(separator: "\n")
+        let more = sessions.count > 8 ? "\n… and \(sessions.count - 8) more" : ""
+        guard confirm(
+            "Quit \(sessions.count) dormant session\(sessions.count == 1 ? "" : "s")?",
+            "They are sent SIGTERM, so each one writes out its transcript and can be picked up again with `claude -c` in the same directory. Their terminal windows stay open.\n\n\(names)\(more)",
+            confirmTitle: "Quit Sessions"
+        ) else { return }
+
+        for session in sessions { kill(session.pid, SIGTERM) }
+    }
+
     private static func notFound(_ name: String) {
         alert(
             "Could not find the window for \(name)",
@@ -213,5 +229,16 @@ enum Launcher {
         alert.alertStyle = .warning
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
+    }
+
+    static func confirm(_ title: String, _ message: String, confirmTitle: String) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: confirmTitle)
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal() == .alertFirstButtonReturn
     }
 }

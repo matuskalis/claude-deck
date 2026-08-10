@@ -73,6 +73,15 @@ struct Session: Identifiable, Sendable, Equatable {
         return now.timeIntervalSince(idleSince) > 30 * 60
     }
 
+    /// A terminal tab left open days ago. A fixed 12 hours rather than "not today",
+    /// which would collapse the whole list the moment midnight passed.
+    static let dormantAfter: TimeInterval = 12 * 3600
+
+    func isDormant(now: Date) -> Bool {
+        guard case .idle = state, let idleSince else { return false }
+        return now.timeIntervalSince(idleSince) > Self.dormantAfter
+    }
+
     var project: String { (cwd as NSString).lastPathComponent }
 
     var shortPath: String {
