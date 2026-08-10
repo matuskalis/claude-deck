@@ -6,24 +6,34 @@
 ![dependencies: none](https://img.shields.io/badge/dependencies-none-brightgreen)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-A macOS menu bar app that shows every running Claude Code CLI session, what it is doing
-right now, how full its context window is, how close you are to your plan limits, and what
-today has cost. It notifies you when a session finishes or blocks on a permission prompt,
-takes you back to the terminal window a session is running in, and starts new ones.
+A macOS menu bar app that shows every running Claude Code CLI session, which tool it is
+inside right now, how full its context window is, how close you are to your plan limits,
+and what today has cost. It watches background jobs, which have no window to look at,
+notifies you when a session finishes, blocks, or dies on a rate limit, takes you back to
+the terminal a session is running in, and starts new ones.
 
 ```
 ┌────────────────────────────────────────────┐
-│ Claude Deck              1 waiting  2 busy │
+│ Claude Deck    1 waiting 1 blocked  2 busy │
 │ ◐ shiftfix   opus    waiting: Bash approval│
-│ ● fix-shorts-water…  busy 4m12s  ◕ 72%     │
+│ ● fix-shorts-water…  Bash 4m12s  ◕ 72%     │
 │   ~/projects/shorts-engine  "fix the…"     │
-│ ○ matuskalis-4d      idle        ◔ 31%     │
+│ ○ matuskalis-4d  stale  idle     ◔ 31%     │
+│────────────────────────────────────────────│
+│ Background jobs                          2 │
+│ ● fix-shorts-watermark…  blocked     1.9M  │
+│   V rade je 44 starých klipov. Kam s 43?   │
+│   Odložiť staré · Miešať · Pridať za staré │
+│   ✦ Normalize collapse loudness      9m41s │
+│ ● bear-data-h2     2 running, 1 queued 114k│
+│   branch ready, local server running       │
 │────────────────────────────────────────────│
 │ Plan limits                ▂▄▆█ good 162Mb │
 │ Session         resets in 4h02m        24% │
 │ ▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
 │ Weekly          resets in 11h29m       82% │
 │ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░ │
+│ on course to hit 100% Tue 03:04            │
 │ Weekly · Fable                         27% │
 │ ▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
 │ as of 21:30, refreshed by Claude Code      │
@@ -72,6 +82,8 @@ has to be carried by the symbol and a compact badge:
 | `terminal` | sessions exist, none busy |
 | `terminal.fill` + `2` | two sessions busy |
 | `exclamationmark.bubble.fill` | at least one session is blocked on a permission prompt |
+| `bolt.slash.fill` | a turn was killed by an API error |
+| `pause.circle.fill` | a background job is waiting on an answer |
 | `wifi.slash` | the Wi-Fi association dropped |
 | `exclamationmark.triangle.fill` + `82%` | a plan limit reached its critical band |
 
@@ -90,10 +102,16 @@ System Settings › Notifications.
 |---|---|
 | a session blocks on a permission prompt | `⏸ <project> needs you`, replaced per session, repeats suppressed within 5s, removed once the session moves on |
 | a session finishes after being busy ≥ 10s | `✅ <name> finished` |
+| a turn ends on an API error | `⚠ <name> stopped` with the reason |
+| a background job blocks on a question | `⏸ <name> is blocked` with the question, keyed on the question so a new one alerts and a re-read does not |
+| a session passes 85% context | `<name> is at <n>% context`, re-armed once it drops below 70% |
 | a plan limit passes 80% or 95% | `<limit> usage at <n>%`, once per threshold per window, so it fires again after the window resets |
 | the Wi-Fi association drops | `Wi-Fi dropped`, withdrawn when the link comes back |
 
 The 10 second floor exists so that two-second replies do not produce banner noise.
+
+Banners about a session carry its pid and a **Focus** button, so one can take you to the
+window rather than only telling you about it.
 
 ## Focus a running session
 
@@ -121,6 +139,42 @@ app says which System Settings pane to fix rather than doing nothing.
 Directory paths are quoted for the shell and then escaped again for the AppleScript string
 literal they sit inside, so a project called `it's a test` launches correctly.
 
+## Background jobs
+
+Background sessions used to be filtered out of the scan entirely, which meant the sessions
+nobody is sitting in front of were the only ones the app did not show. They are read from
+`~/.claude/jobs/<jobId>/state.json`, which says considerably more than a session file does:
+what it is doing in a sentence, what it has fanned out to subagents and shell commands, how
+many tokens it has spent, and — beside it — a `timeline.jsonl` it appends progress notes to,
+of which the last three are shown.
+
+A blocked job is the background equivalent of a permission prompt: nothing moves until it
+is answered, and there is no window anywhere showing that it is waiting. Those sort first,
+colour amber, and notify.
+
+**`state` alone does not detect that.** A job can hold an unanswered question in
+`block.questions` while still reporting `working`, so blocked means any of `state`, `tempo`,
+or a pending question. The question and its options are printed verbatim, which is more use
+than the prose paraphrase in `needs`.
+
+Job directories outlive the processes that wrote them, so liveness comes from joining
+`jobId` against the live background session files. A job still claiming `working` with no
+process behind it shows as **not running** rather than being hidden, since that is the
+failure worth seeing. Finished jobs, and anything untouched for a day, are dropped.
+
+## Tool activity
+
+`PreToolUse` and `PostToolUse` hooks turn `busy 4m12s` into `Bash 4m12s`. Their payload
+carries the entire `tool_input`, which on a `Write` is a whole file, so they get a spool of
+their own written by `~/.claude/claude-deck/spool`, a helper that appends one line and
+rotates the file with `tail -c` past a megabyte.
+
+**The helper has no `set -e` and always exits 0.** A `PreToolUse` hook that exits non-zero
+blocks the tool call it fired for, and nothing a menu bar app wants is worth stopping
+someone's Bash call. Rotation replaces the file, so the directory watcher is what re-arms
+the file watcher onto the new inode; the rewind that follows replays the tail, which is
+harmless because a replayed `PreToolUse` only re-sets a label the next `PostToolUse` clears.
+
 ## Plan limits
 
 Claude Code fetches your plan utilisation from its usage endpoint and caches the result in
@@ -143,6 +197,21 @@ mtime changed.
 Severity comes from the API's own `severity` field rather than from a threshold picked
 here, because the thresholds are Anthropic's. The colour scale is shared with the context
 rings and the signal bars, so a colour means the same thing everywhere in the menu.
+
+### Forecast
+
+The limits arrive as percentages with no token denominator behind them, so the only rate
+that can be measured is **percent per hour**, and the only way to measure it is to watch
+them move. Samples go to `~/.claude/claude-deck/usage-history.jsonl`, capped at 400.
+
+Only samples since the last reset count — a percentage that fell is a new window, and
+averaging across the boundary would halve every rate. They are sorted before the fit rather
+than trusted in file order, because a sample landing out of order reads as a reset to that
+test and silently truncates the window.
+
+Nothing is shown until three samples span an hour, and nothing is shown for a limit that
+resets before it would fill. Silence early on is the honest answer, not an extrapolation
+from two readings.
 
 ## Wi-Fi
 
@@ -204,6 +273,15 @@ These are first-party API list prices. **A Max or Pro subscription is not billed
 token**, so the figure is a usage-equivalent estimate, not a bill, and is always shown
 with "est".
 
+Today's tokens are also split by project inside the breakdown. The directory name under
+`~/.claude/projects` has `/` replaced by `-`, which is ambiguous to undo — `shorts-engine`
+and `shorts/engine` encode identically — so the project name comes from each transcript's
+own `cwd` field instead.
+
+The `$/h` beside today's estimate is measured from the day's first assistant message rather
+than from midnight, so a day that started at 14:00 does not report a quarter of its real
+rate.
+
 ## Launch at login
 
 `SMAppService.mainApp` behind a checkbox. It only registers when the app is running from
@@ -214,10 +292,22 @@ stale copy at login.
 ## Permission prompts need hooks
 
 Nothing on disk changes when Claude Code blocks on a permission prompt: the session
-status stays `busy`. The only signal is a hook. **Install hooks** in the menu merges four
-entries (`Notification`, `Stop`, `UserPromptSubmit`, `SessionEnd`) into
-`~/.claude/settings.json`; each one appends the hook's stdin to
-`~/.claude/claude-deck/events.jsonl`, which the app tails.
+status stays `busy`. The only signal is a hook. **Install hooks** in the menu merges seven
+entries into `~/.claude/settings.json`:
+
+| Hook | For |
+|---|---|
+| `Notification` | permission prompts |
+| `Stop` | a finished turn |
+| `StopFailure` | a turn killed by an API error |
+| `UserPromptSubmit`, `SessionEnd` | clearing the above |
+| `PreToolUse`, `PostToolUse` | the tool a session is inside |
+
+The first five append the hook's stdin to `~/.claude/claude-deck/events.jsonl`. The two tool
+hooks go through the spool helper instead, for the reasons in [Tool activity](#tool-activity).
+
+Adding hook names to a release means an existing install reports **Hooks not installed**
+until Reinstall is pressed; that is the intended path, not a bug.
 
 Before writing, the installer copies `settings.json` to
 `settings.json.bak-claude-deck-<timestamp>`. The edit is a text splice that leaves every
@@ -235,7 +325,9 @@ running will not emit events until they are restarted.
 ## What it reads
 
 Everything except `~/.claude/settings.json` (hook install) and `~/.claude/claude-deck/`
-(its own spool) is read-only.
+(its own spools, samples and helper) is read-only. Background jobs are watched, never
+answered: there is a messaging socket at `/tmp/cc-socks/<pid>.sock`, and this app
+deliberately does not touch it.
 
 | Path | Used for |
 |---|---|
@@ -244,7 +336,11 @@ Everything except `~/.claude/settings.json` (hook install) and `~/.claude/claude
 | `~/.claude/history.jsonl` | the last prompt shown under each row, the recent project list, today's session ids |
 | `~/.claude/settings.json` | whether the configured model is a 1M-context one; hook install state |
 | `~/.claude/stats-cache.json` | lifetime sessions and per-model tokens |
+| `~/.claude/jobs/<jobId>/state.json` | a background job's state, what it needs, its fan-out and token count |
+| `~/.claude/jobs/<jobId>/timeline.jsonl` | the last three progress notes, read from the end |
 | `~/.claude/claude-deck/events.jsonl` | hook events |
+| `~/.claude/claude-deck/tools.jsonl` | tool hook events, written and rotated by the spool helper |
+| `~/.claude/claude-deck/usage-history.jsonl` | plan limit samples for the forecast (written) |
 | `~/.claude/claude-deck/prices.json` | token prices for the cost estimate (written with defaults, then yours) |
 | `~/.claude.json` | `cachedUsageUtilization` only: plan limit percentages, severities and reset times |
 
@@ -283,19 +379,19 @@ exceeds 200k, and 200k otherwise.
 - A `DispatchSource` watcher on `~/.claude/sessions/`, debounced 200 ms, which for the
   same reason only reacts to sessions starting and exiting. Watching each file
   individually would buy sub-second status updates; 3 s is fine for a menu bar app.
-- A watcher on `~/.claude/claude-deck/events.jsonl` itself, plus one on its directory to
-  re-arm after the file is recreated — a directory watcher never sees appends either.
-  Hook events therefore land in well under a second, and the timer drains the spool as a
-  backstop.
-- A 15 s timer for the two cheap meters: the stat-gated read of `~/.claude.json` and the
-  `CWInterface` query. Both also run when the menu opens, so what you see on open is
-  current rather than up to 15 s old.
+- A watcher on each of `events.jsonl` and `tools.jsonl`, plus one on their directory to
+  re-arm after either is recreated — a directory watcher never sees appends either, and
+  rotation replaces `tools.jsonl` outright. Hook events therefore land in well under a
+  second, and the timer drains both spools as a backstop.
+- A 15 s timer for the cheap meters: the stat-gated read of `~/.claude.json`, the
+  stat-gated pass over `~/.claude/jobs/`, and the `CWInterface` query. All three also run
+  when the menu opens, so what you see on open is current rather than up to 15 s old.
 - Busy durations and limit reset countdowns tick inside the open menu via `TimelineView`;
   nothing polls while it is closed.
 
 ## Compatibility
 
-Developed against **Claude Code 2.1.220**, verified against **2.1.223**, on macOS 26
+Developed against **Claude Code 2.1.220**, verified against **2.1.226**, on macOS 26
 (arm64). Everything under `~/.claude`, plus `cachedUsageUtilization` in `~/.claude.json`,
 is an undocumented internal format and can change without notice, so every field is decoded
 as optional and anything unrecognised degrades to "unknown" rather than dropping a row or
