@@ -4,48 +4,87 @@ struct SessionRow: View {
     let session: Session
     let now: Date
 
+    @State private var hovering = false
+
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: dotSymbol)
-                .font(.system(size: 9))
-                .foregroundStyle(dotColor)
-                .padding(.top, 3)
+        Button {
+            Launcher.focus(pid: session.pid, name: session.name)
+        } label: {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: dotSymbol)
+                    .font(.system(size: 9))
+                    .foregroundStyle(dotColor)
+                    .symbolEffect(.pulse, options: .repeating, isActive: isBusy)
+                    .padding(.top, 3)
 
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 6) {
-                    Text(session.name)
-                        .fontWeight(.medium)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer(minLength: 4)
-                    Text(statusText)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    if let percent = session.contextPercent {
-                        Text("\(percent)%")
-                            .monospacedDigit()
-                            .foregroundStyle(contextColor(percent))
-                    }
-                }
-                .font(.system(size: 12))
-
-                HStack(spacing: 6) {
-                    Text(session.shortPath)
-                        .lineLimit(1)
-                        .truncationMode(.head)
-                    if let prompt = session.lastPrompt, !prompt.isEmpty {
-                        Text("“\(prompt.replacingOccurrences(of: "\n", with: " "))”")
-                            .italic()
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 6) {
+                        Text(session.name)
+                            .fontWeight(.medium)
                             .lineLimit(1)
-                            .truncationMode(.tail)
+                            .truncationMode(.middle)
+                        if let model = shortModel {
+                            Text(model)
+                                .font(.system(size: 9, weight: .medium))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Color.primary.opacity(0.08), in: Capsule())
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 4)
+                        Text(statusText)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        if let percent = session.contextPercent {
+                            RingGauge(percent: percent, severity: Severity(percent: percent))
+                            Text("\(percent)%")
+                                .monospacedDigit()
+                                .foregroundStyle(Severity(percent: percent).color)
+                        }
                     }
+                    .font(.system(size: 12))
+
+                    HStack(spacing: 6) {
+                        Text(session.shortPath)
+                            .lineLimit(1)
+                            .truncationMode(.head)
+                        if let prompt = session.lastPrompt, !prompt.isEmpty {
+                            Text("“\(prompt.replacingOccurrences(of: "\n", with: " "))”")
+                                .italic()
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
+                    }
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
                 }
-                .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
             }
+            .padding(.vertical, 4)
+            .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(hovering ? Color.primary.opacity(0.07) : Color.clear)
+            )
+            .contentShape(Rectangle())
         }
-        .padding(.vertical, 4)
-        .padding(.horizontal, 12)
+        .buttonStyle(.plain)
+        .padding(.horizontal, 4)
+        .onHover { hovering = $0 }
+        .help("Bring this session's terminal window to the front")
+    }
+
+    private var isBusy: Bool {
+        if case .busy = session.state { return true }
+        return false
+    }
+
+    /// `claude-opus-4-8` reads as `opus` in a row that is already tight.
+    private var shortModel: String? {
+        guard let model = session.usage?.model else { return nil }
+        let parts = model.split(separator: "-")
+        guard parts.count > 1, parts[0] == "claude" else { return nil }
+        return String(parts[1])
     }
 
     private var dotSymbol: String {
@@ -59,7 +98,7 @@ struct SessionRow: View {
     private var dotColor: Color {
         switch session.state {
         case .busy: .orange
-        case .waitingPermission: .red
+        case .waitingPermission: Severity.critical.color
         case .idle: .secondary
         }
     }
@@ -70,10 +109,6 @@ struct SessionRow: View {
         case .waitingPermission(let message): "waiting: \(message)"
         case .idle: "idle"
         }
-    }
-
-    private func contextColor(_ percent: Int) -> Color {
-        percent >= 80 ? .red : (percent >= 60 ? .yellow : .green)
     }
 
     static func duration(_ interval: TimeInterval) -> String {
