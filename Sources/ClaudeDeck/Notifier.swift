@@ -38,6 +38,29 @@ final class Notifier {
         )
     }
 
+    func usageThreshold(limit: UsageLimit, threshold: Int) {
+        post(
+            identifier: "usage-\(limit.id)-\(threshold)",
+            title: "\(limit.title) usage at \(limit.percent)%",
+            body: limit.resetsAt.map { "Resets \(Self.relative.localizedString(for: $0, relativeTo: Date()))" }
+                ?? limit.subtitle
+        )
+    }
+
+    func wifiDropped() {
+        post(
+            identifier: "wifi-dropped",
+            title: "Wi-Fi dropped",
+            body: "Running sessions will fail their next request."
+        )
+    }
+
+    func wifiRestored() {
+        center.removeDeliveredNotifications(withIdentifiers: ["wifi-dropped"])
+    }
+
+    private static let relative = RelativeDateTimeFormatter()
+
     func clearPermissionAlert(sessionId: String) {
         lastPermissionAlert[sessionId] = nil
         center.removeDeliveredNotifications(withIdentifiers: ["perm-\(sessionId)"])

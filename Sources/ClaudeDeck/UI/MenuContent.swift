@@ -10,22 +10,28 @@ struct MenuContent: View {
             header
             Divider()
 
-            if store.sessions.isEmpty {
-                Text("No active sessions")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-            } else {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 0) {
-                            ForEach(store.sessions) { session in
-                                SessionRow(session: session, now: context.date)
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                VStack(alignment: .leading, spacing: 0) {
+                    if store.sessions.isEmpty {
+                        Text("No active sessions")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                    } else {
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 0) {
+                                ForEach(store.sessions) { session in
+                                    SessionRow(session: session, now: context.date)
+                                }
                             }
+                            .padding(.vertical, 3)
                         }
+                        .frame(maxHeight: 340)
                     }
-                    .frame(maxHeight: 340)
+
+                    Divider()
+                    UsageSection(usage: store.usage, wifi: store.wifi, now: context.date)
                 }
             }
 
@@ -76,22 +82,40 @@ struct MenuContent: View {
     }
 
     private var header: some View {
-        HStack {
+        HStack(spacing: 6) {
             Text("Claude Deck").font(.system(size: 12, weight: .semibold))
-            Spacer()
-            Text(summary)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+            Spacer(minLength: 4)
+            if store.waitingCount > 0 {
+                pill("\(store.waitingCount) waiting", .critical)
+            }
+            if store.busyCount > 0 {
+                pill("\(store.busyCount) busy", .warning)
+            }
+            if store.busyCount == 0, store.waitingCount == 0 {
+                Text("\(store.sessions.count) idle")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+        .background(
+            LinearGradient(
+                colors: [Color.primary.opacity(0.05), Color.clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
     }
 
-    private var summary: String {
-        var parts: [String] = []
-        if store.busyCount > 0 { parts.append("\(store.busyCount) busy") }
-        if store.waitingCount > 0 { parts.append("\(store.waitingCount) waiting") }
-        return parts.isEmpty ? "\(store.sessions.count) idle" : parts.joined(separator: ", ")
+    private func pill(_ text: String, _ severity: Severity) -> some View {
+        Text(text)
+            .font(.system(size: 10, weight: .medium))
+            .monospacedDigit()
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(severity.color.opacity(0.16), in: Capsule())
+            .foregroundStyle(severity.color)
     }
 
     private var footer: some View {

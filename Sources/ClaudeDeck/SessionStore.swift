@@ -10,9 +10,12 @@ final class SessionStore {
     private(set) var installError: String?
     private(set) var recentProjects: [String] = []
     private(set) var stats = StatsSnapshot()
+    private(set) var usage = UsageSnapshot()
+    private(set) var wifi = WifiStatus()
 
     @ObservationIgnored private let transcripts = TranscriptTail()
     @ObservationIgnored private let statsReader = StatsReader()
+    @ObservationIgnored private let usageReader = UsageReader()
     @ObservationIgnored private let history = HistoryTail()
     @ObservationIgnored private let spool = EventsSpool()
     @ObservationIgnored private let notifier = Notifier()
@@ -22,6 +25,10 @@ final class SessionStore {
     @ObservationIgnored private var spoolFileWatcher: DirWatcher?
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var statsTimer: Timer?
+    @ObservationIgnored private var meterTimer: Timer?
+    /// One entry per threshold already announced, keyed by the window it applies to so the
+    /// same limit alerts again after it resets.
+    @ObservationIgnored private var announcedThresholds: Set<String> = []
 
     /// Sessions blocked on a permission prompt. There is no on-disk signal for this,
     /// so the state comes from a hook event and is cleared once the session writes a
@@ -69,9 +76,13 @@ final class SessionStore {
         statsTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refreshStats() }
         }
+        meterTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refreshMeters() }
+        }
 
         refresh()
         refreshStats()
+        refreshMeters()
     }
 
     private func watchSpoolFile() {
@@ -83,8 +94,38 @@ final class SessionStore {
     func menuOpened() {
         refresh()
         refreshStats()
+        refreshMeters()
         loadUsage(for: sessions.map(\.id))
         Task { notificationsBlocked = await notifier.isBlocked() }
+    }
+
+    // MARK: - Plan limits and Wi-Fi
+
+    private func refreshMeters() {
+        Task.detached(priority: .utility) { [usageReader] in
+            let usage = await usageReader.snapshot()
+            let wifi = WifiStatus.read()
+            await self.apply(usage: usage, wifi: wifi)
+        }
+    }
+
+    private func apply(usage: UsageSnapshot, wifi: WifiStatus) {
+        if self.wifi.present, self.wifi.connected != wifi.connected {
+            wifi.connected ? notifier.wifiRestored() : notifier.wifiDropped()
+        }
+        self.wifi = wifi
+
+        guard usage != self.usage else { return }
+        self.usage = usage
+        for limit in usage.limits {
+            let window = limit.resetsAt.map { "\(Int($0.timeIntervalSince1970))" } ?? "none"
+            for threshold in [95, 80] where limit.percent >= threshold {
+                let key = "\(limit.id)-\(window)-\(threshold)"
+                guard announcedThresholds.insert(key).inserted else { break }
+                notifier.usageThreshold(limit: limit, threshold: threshold)
+                break
+            }
+        }
     }
 
     private func refreshStats() {
