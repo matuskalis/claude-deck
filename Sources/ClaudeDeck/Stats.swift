@@ -71,9 +71,20 @@ struct StatsSnapshot: Sendable, Equatable {
     var lifetimeIncludesLive = false
     var recentDays: [DayTokens] = []
     var prices = Prices()
+    /// First assistant message of the local day, which is what the burn rate divides by.
+    var todayStarted: Date?
 
     var todayTotals: TokenTotals { today.values.reduce(TokenTotals(), +) }
     var lifetimeTotals: TokenTotals { lifetime.values.reduce(TokenTotals(), +) }
+
+    /// USD per hour since the day's first message. The floor stops a single request in the
+    /// last minute from reporting a four-figure rate.
+    var burnRate: Double? {
+        guard let todayStarted else { return nil }
+        let hours = max(0.25, Date().timeIntervalSince(todayStarted) / 3600)
+        let usd = prices.estimate(today).usd
+        return usd > 0 ? usd / hours : nil
+    }
 }
 
 /// Two sources: Claude Code's own `stats-cache.json`, which is only recomputed when its
@@ -126,10 +137,12 @@ actor StatsReader {
         let startOfToday = Self.utcStamp(Calendar.current.startOfDay(for: Date()))
         var today: [String: TokenTotals] = [:]
         var live: [String: TokenTotals] = [:]
+        var firstToday: String?
         for request in requests.values {
             live[request.model] = (live[request.model] ?? TokenTotals()) + request.totals
             guard request.timestamp >= startOfToday else { continue }
             today[request.model] = (today[request.model] ?? TokenTotals()) + request.totals
+            if firstToday == nil || request.timestamp < firstToday! { firstToday = request.timestamp }
         }
 
         // With no cache to build on, transcripts alone are not a lifetime — old ones get
@@ -150,8 +163,17 @@ actor StatsReader {
             lifetimeAsOf: lifetimeAsOf,
             lifetimeIncludesLive: toppedUp,
             recentDays: recentDays,
-            prices: prices
+            prices: prices,
+            todayStarted: firstToday.flatMap(Self.parse)
         )
+    }
+
+    private static func parse(_ stamp: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
+        return formatter.date(from: stamp)
     }
 
     // MARK: - Live tail of transcripts

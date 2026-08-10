@@ -21,6 +21,24 @@ struct StatsSection: View {
                     .foregroundStyle(.tertiary)
             }
 
+            if stats.recentDays.count > 1 {
+                VStack(alignment: .leading, spacing: 1) {
+                    Sparkline(values: stats.recentDays.map(\.tokens), color: Severity.normal.color)
+                        .frame(height: 20)
+                    HStack {
+                        Text(stats.recentDays.first?.date ?? "")
+                        Spacer()
+                        Text("last \(stats.recentDays.count) days")
+                        Spacer()
+                        Text(stats.recentDays.last?.date ?? "")
+                    }
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+                    .monospacedDigit()
+                }
+                .padding(.top, 2)
+            }
+
             if unpricedToday > 0 {
                 Text("\(unpricedToday) model\(unpricedToday == 1 ? "" : "s") unpriced — edit prices.json")
                     .foregroundStyle(.tertiary)
@@ -91,7 +109,9 @@ struct StatsSection: View {
     private var todaySummary: String {
         let estimate = stats.prices.estimate(stats.today)
         let sessions = "\(stats.todaySessions) session\(stats.todaySessions == 1 ? "" : "s")"
-        return "\(sessions) · \(Self.compact(stats.todayTotals.all)) tok · ~\(Self.money(estimate.usd)) est"
+        var summary = "\(sessions) · \(Self.compact(stats.todayTotals.all)) tok · ~\(Self.money(estimate.usd)) est"
+        if let burn = stats.burnRate { summary += " · \(Self.money(burn))/h" }
+        return summary
     }
 
     private var unpricedToday: Int {
