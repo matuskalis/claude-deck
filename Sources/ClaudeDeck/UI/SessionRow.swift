@@ -98,6 +98,7 @@ struct SessionRow: View {
         switch session.state {
         case .busy: "circle.fill"
         case .waitingPermission: "circle.lefthalf.filled"
+        case .failed: "bolt.slash.fill"
         case .idle: "circle"
         }
     }
@@ -105,7 +106,7 @@ struct SessionRow: View {
     private var dotColor: Color {
         switch session.state {
         case .busy: .orange
-        case .waitingPermission: Severity.critical.color
+        case .waitingPermission, .failed: Severity.critical.color
         case .idle: .secondary
         }
     }
@@ -115,6 +116,7 @@ struct SessionRow: View {
         case .busy(let since):
             "\(session.tool ?? "busy") \(Self.duration(now.timeIntervalSince(since)))"
         case .waitingPermission(let message): "waiting: \(message)"
+        case .failed(let message): "stopped: \(message)"
         case .idle: "idle"
         }
     }

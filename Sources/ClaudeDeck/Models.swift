@@ -46,6 +46,9 @@ enum SessionState: Sendable, Equatable {
     case idle
     case busy(since: Date)
     case waitingPermission(message: String)
+    /// The turn ended on an API error rather than finishing. Sticks until the next prompt,
+    /// because otherwise a rate-limited session is indistinguishable from a finished one.
+    case failed(message: String)
 }
 
 struct Session: Identifiable, Sendable, Equatable {

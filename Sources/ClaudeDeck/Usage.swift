@@ -33,6 +33,9 @@ struct UsageLimit: Sendable, Equatable, Identifiable {
 struct UsageSnapshot: Sendable, Equatable {
     var limits: [UsageLimit] = []
     var fetchedAt: Date?
+    /// When each limit is on course to reach 100%, keyed by `UsageLimit.id`. Only present
+    /// for limits that would get there before they reset.
+    var forecast: [String: Date] = [:]
 
     /// The limit that decides the menu bar icon: whatever is closest to its ceiling.
     var worst: UsageLimit? { limits.max { $0.percent < $1.percent } }
@@ -46,8 +49,14 @@ struct UsageSnapshot: Sendable, Equatable {
 actor UsageReader {
     private static let configURL = URL(fileURLWithPath: NSHomeDirectory()).appending(path: ".claude.json")
 
+    private static let historyURL = EventsSpool.directory.appending(path: "usage-history.jsonl")
+    /// Enough for a couple of weeks of samples at one every fetch.
+    private static let maxSamples = 400
+
     private var stamp = ""
     private var cached = UsageSnapshot()
+    private var samples: [Sample] = []
+    private var loadedHistory = false
 
     func snapshot() -> UsageSnapshot {
         var info = stat()
@@ -63,6 +72,7 @@ actor UsageReader {
         guard let file = try? decoder.decode(ConfigFile.self, from: data) else { return cached }
 
         stamp = current
+        loadHistory()
         let cache = file.cachedUsageUtilization
         cached = UsageSnapshot(
             limits: (cache?.utilization?.limits ?? []).compactMap { entry in
@@ -79,7 +89,81 @@ actor UsageReader {
             },
             fetchedAt: cache?.fetchedAtMs.map { Date(epochMilliseconds: $0) }
         )
+        record(cached)
+        cached.forecast = forecasts(for: cached.limits)
         return cached
+    }
+
+    // MARK: - Forecast
+
+    /// The limits are percentages with no token denominator behind them, so the only rate
+    /// that can be measured is percent per hour, and the only way to measure it is to watch
+    /// them move. Samples are kept in the app's own directory.
+    private struct Sample: Codable, Sendable {
+        var at: Double
+        var kind: String
+        var percent: Int
+    }
+
+    private func loadHistory() {
+        guard !loadedHistory else { return }
+        loadedHistory = true
+        guard let data = try? Data(contentsOf: Self.historyURL) else { return }
+        let decoder = JSONDecoder()
+        samples = data
+            .split(separator: UInt8(ascii: "\n"))
+            .compactMap { try? decoder.decode(Sample.self, from: Data($0)) }
+            .suffix(Self.maxSamples)
+    }
+
+    private func record(_ snapshot: UsageSnapshot) {
+        guard let at = snapshot.fetchedAt else { return }
+        let stamp = at.timeIntervalSince1970
+        // One sample per fetch: the file changes far more often than the figures in it do.
+        guard !samples.contains(where: { $0.at == stamp }) else { return }
+
+        samples.append(contentsOf: snapshot.limits.map {
+            Sample(at: stamp, kind: $0.id, percent: $0.percent)
+        })
+        if samples.count > Self.maxSamples { samples.removeFirst(samples.count - Self.maxSamples) }
+
+        let encoder = JSONEncoder()
+        let lines = samples.compactMap { try? encoder.encode($0) }
+            .map { String(decoding: $0, as: UTF8.self) }
+            .joined(separator: "\n")
+        try? FileManager.default.createDirectory(at: EventsSpool.directory, withIntermediateDirectories: true)
+        try? Data((lines + "\n").utf8).write(to: Self.historyURL, options: .atomic)
+    }
+
+    private func forecasts(for limits: [UsageLimit]) -> [String: Date] {
+        var found: [String: Date] = [:]
+        let now = Date()
+
+        for limit in limits {
+            // Sorted first: the reset test below reads a fall in percentage as a new window,
+            // and a sample landing out of file order would read as one.
+            let ordered = samples.filter { $0.kind == limit.id }.sorted { $0.at < $1.at }
+
+            // Only samples since the last reset count. Averaging across a reset boundary
+            // would halve every rate.
+            var window: [Sample] = []
+            for sample in ordered {
+                if let last = window.last, sample.percent < last.percent { window = [] }
+                window.append(sample)
+            }
+
+            guard window.count >= 3,
+                  let first = window.first, let last = window.last,
+                  case let hours = (last.at - first.at) / 3600, hours >= 1,
+                  case let rate = Double(last.percent - first.percent) / hours, rate > 0,
+                  limit.percent < 100 else { continue }
+
+            let reaches = now.addingTimeInterval((100 - Double(limit.percent)) / rate * 3600)
+            // A limit that resets before it fills is not news.
+            guard let resets = limit.resetsAt, reaches < resets else { continue }
+            found[limit.id] = reaches
+        }
+        return found
     }
 
     /// `resets_at` carries six fractional digits, which `ISO8601DateFormatter` rejects, so

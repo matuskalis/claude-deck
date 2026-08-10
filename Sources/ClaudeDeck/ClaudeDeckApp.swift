@@ -24,6 +24,7 @@ struct ClaudeDeckApp: App {
     private var symbol: String {
         let store = delegate.store
         if store.waitingCount > 0 { return "exclamationmark.bubble.fill" }
+        if store.failedCount > 0 { return "bolt.slash.fill" }
         if store.blockedJobCount > 0 { return "pause.circle.fill" }
         if store.wifi.present, !store.wifi.connected { return "wifi.slash" }
         if let worst = store.usage.worst, Severity(api: worst.severity, percent: worst.percent) == .critical {

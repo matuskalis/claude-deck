@@ -55,7 +55,24 @@ struct UsageSection: View {
             .font(.system(size: 11))
 
             MeterBar(percent: limit.percent, severity: severity)
+
+            if let reaches = usage.forecast[limit.id] {
+                Text("on course to hit 100% \(Self.when(reaches))")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Severity.warning.color.opacity(0.9))
+            }
         }
+    }
+
+    /// Same day reads as a time, anything further out needs the day with it.
+    private static func when(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        formatter.dateStyle = .none
+        if !Calendar.current.isDateInToday(date) {
+            formatter.dateFormat = "EEE " + (formatter.dateFormat ?? "HH:mm")
+        }
+        return formatter.string(from: date)
     }
 
     private var link: some View {

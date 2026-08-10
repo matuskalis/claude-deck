@@ -47,6 +47,9 @@ final class SessionStore {
     /// PostToolUse. Also cleared when a turn ends, so a killed session does not sit there
     /// claiming to be running something.
     @ObservationIgnored private var currentTool: [String: String] = [:]
+    /// Turns that ended on an API error. Cleared only by the next prompt: the session goes
+    /// idle the moment it fails, so nothing in its own status distinguishes the two.
+    @ObservationIgnored private var failures: [String: String] = [:]
     @ObservationIgnored private var lastStatus: [String: String] = [:]
     @ObservationIgnored private var busySince: [String: Date] = [:]
     @ObservationIgnored private var usageCache: [String: TranscriptUsage] = [:]
@@ -65,6 +68,10 @@ final class SessionStore {
 
     var blockedJobCount: Int {
         jobs.count { $0.isBlocked }
+    }
+
+    var failedCount: Int {
+        sessions.count { if case .failed = $0.state { return true } else { return false } }
     }
 
     func start() {
@@ -299,6 +306,9 @@ final class SessionStore {
                     state = .waitingPermission(message: wait.message)
                 }
             }
+            if let failure = failures[id], !isBusy {
+                state = .failed(message: failure)
+            }
 
             let usage = usageCache[id]
             built.append(Session(
@@ -324,6 +334,7 @@ final class SessionStore {
         busySince = busySince.filter { liveIds.contains($0.key) }
         usageCache = usageCache.filter { liveIds.contains($0.key) }
         currentTool = currentTool.filter { liveIds.contains($0.key) }
+        failures = failures.filter { liveIds.contains($0.key) }
         Task.detached(priority: .background) { [transcripts] in await transcripts.forget(sessionIds: liveIds) }
 
         if !flipped.isEmpty { loadUsage(for: flipped) }
@@ -333,8 +344,9 @@ final class SessionStore {
         func rank(_ state: SessionState) -> Int {
             switch state {
             case .waitingPermission: 0
-            case .busy: 1
-            case .idle: 2
+            case .failed: 1
+            case .busy: 2
+            case .idle: 3
             }
         }
         let (left, right) = (rank(lhs.state), rank(rhs.state))
@@ -413,9 +425,22 @@ final class SessionStore {
                 busySince[id] = nil
                 loadUsage(for: [id])
 
+            case "StopFailure":
+                clearWait(id)
+                currentTool[id] = nil
+                busySince[id] = nil
+                let message = event.message ?? "The turn ended with an API error"
+                failures[id] = message
+                notifier.sessionFailed(
+                    sessionId: id,
+                    name: session?.name ?? project.lastPathComponent,
+                    message: message
+                )
+
             case "UserPromptSubmit", "SessionEnd":
                 clearWait(id)
                 currentTool[id] = nil
+                failures[id] = nil
 
             default:
                 break

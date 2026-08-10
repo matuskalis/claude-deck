@@ -38,6 +38,16 @@ final class Notifier {
         )
     }
 
+    /// A turn killed by a rate limit or an auth failure looks exactly like a finished one
+    /// from the outside, so it gets its own banner rather than the ✅ one.
+    func sessionFailed(sessionId: String, name: String, message: String) {
+        post(
+            identifier: "failed-\(sessionId)-\(Int(Date().timeIntervalSince1970 * 1000))",
+            title: "⚠ \(name) stopped",
+            body: message
+        )
+    }
+
     /// A background job that is blocked will sit there forever, and there is no terminal
     /// window anywhere showing that it is waiting.
     func jobBlocked(job: Job) {
