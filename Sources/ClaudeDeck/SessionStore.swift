@@ -1,0 +1,322 @@
+import Foundation
+import Observation
+
+@MainActor
+@Observable
+final class SessionStore {
+    private(set) var sessions: [Session] = []
+    private(set) var hooksInstalled = false
+    private(set) var notificationsBlocked = false
+    private(set) var installError: String?
+    private(set) var recentProjects: [String] = []
+    private(set) var stats = StatsSnapshot()
+
+    @ObservationIgnored private let transcripts = TranscriptTail()
+    @ObservationIgnored private let statsReader = StatsReader()
+    @ObservationIgnored private let history = HistoryTail()
+    @ObservationIgnored private let spool = EventsSpool()
+    @ObservationIgnored private let notifier = Notifier()
+
+    @ObservationIgnored private var sessionsWatcher: DirWatcher?
+    @ObservationIgnored private var spoolDirectoryWatcher: DirWatcher?
+    @ObservationIgnored private var spoolFileWatcher: DirWatcher?
+    @ObservationIgnored private var timer: Timer?
+    @ObservationIgnored private var statsTimer: Timer?
+
+    /// Sessions blocked on a permission prompt. There is no on-disk signal for this,
+    /// so the state comes from a hook event and is cleared once the session writes a
+    /// newer status than the moment the event arrived.
+    @ObservationIgnored private var permissionWaits: [String: (message: String, at: Date)] = [:]
+    @ObservationIgnored private var lastStatus: [String: String] = [:]
+    @ObservationIgnored private var busySince: [String: Date] = [:]
+    @ObservationIgnored private var usageCache: [String: TranscriptUsage] = [:]
+    @ObservationIgnored private var oneMillionConfigured = false
+    @ObservationIgnored private var refreshing = false
+    @ObservationIgnored private var sessionIdsStartedToday: Set<String> = []
+    @ObservationIgnored private var statsPrimed = false
+
+    var busyCount: Int {
+        sessions.count { if case .busy = $0.state { return true } else { return false } }
+    }
+
+    var waitingCount: Int {
+        sessions.count { if case .waitingPermission = $0.state { return true } else { return false } }
+    }
+
+    func start() {
+        notifier.requestAuthorization()
+
+        let sessionsDir = URL(fileURLWithPath: NSHomeDirectory()).appending(path: ".claude/sessions")
+        sessionsWatcher = DirWatcher(url: sessionsDir) { [weak self] in
+            Task { @MainActor in self?.refresh() }
+        }
+        // A directory watcher never sees appends to an existing file, so the spool
+        // itself is watched too; the directory watcher only catches its recreation.
+        spoolDirectoryWatcher = DirWatcher(url: EventsSpool.directory) { [weak self] in
+            Task { @MainActor in
+                self?.watchSpoolFile()
+                self?.drainEvents()
+            }
+        }
+        watchSpoolFile()
+
+        timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.refresh()
+                self?.drainEvents()
+            }
+        }
+        statsTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refreshStats() }
+        }
+
+        refresh()
+        refreshStats()
+    }
+
+    private func watchSpoolFile() {
+        spoolFileWatcher = DirWatcher(url: EventsSpool.url) { [weak self] in
+            Task { @MainActor in self?.drainEvents() }
+        }
+    }
+
+    func menuOpened() {
+        refresh()
+        refreshStats()
+        loadUsage(for: sessions.map(\.id))
+        Task { notificationsBlocked = await notifier.isBlocked() }
+    }
+
+    private func refreshStats() {
+        let started = sessionIdsStartedToday
+        Task.detached(priority: .utility) { [statsReader, history] in
+            // History has to have been read at least once for today's prompts to exist.
+            _ = await history.latestPrompts()
+            let promptedToday = await history.sessionsPromptedToday()
+            let snapshot = await statsReader.snapshot(
+                sessionIdsStartedToday: started,
+                promptedToday: promptedToday
+            )
+            await self.apply(stats: snapshot)
+        }
+    }
+
+    private func apply(stats: StatsSnapshot) {
+        self.stats = stats
+    }
+
+    func installHooks() {
+        do {
+            try HookInstaller.install()
+            installError = nil
+        } catch {
+            installError = error.localizedDescription
+        }
+        hooksInstalled = HookInstaller.isInstalled
+    }
+
+    // MARK: - Refresh
+
+    private func refresh() {
+        guard !refreshing else { return }
+        refreshing = true
+
+        Task.detached(priority: .utility) { [history] in
+            let scan = Self.scanSessions()
+            let prompts = await history.latestPrompts()
+            let projects = await history.recentProjects(limit: 8)
+            let oneMillion = TranscriptTail.oneMillionConfigured()
+            let installed = HookInstaller.isInstalled
+            await self.apply(
+                scan: scan.live,
+                startedToday: scan.startedToday,
+                prompts: prompts,
+                projects: projects,
+                oneMillion: oneMillion,
+                hooksInstalled: installed
+            )
+        }
+    }
+
+    private nonisolated static func scanSessions() -> (live: [SessionFile], startedToday: Set<String>) {
+        let directory = URL(fileURLWithPath: NSHomeDirectory()).appending(path: ".claude/sessions")
+        let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+        let decoder = JSONDecoder()
+
+        let candidates = files
+            .filter { $0.pathExtension == "json" }
+            .compactMap { url -> SessionFile? in
+                guard let data = try? Data(contentsOf: url) else { return nil }
+                return try? decoder.decode(SessionFile.self, from: data)
+            }
+            .filter { $0.sessionId != nil && $0.pid != nil && $0.kind != "bg" }
+
+        let startOfDay = Calendar.current.startOfDay(for: Date())
+        let startedToday = Set(candidates.filter {
+            Date(epochMilliseconds: $0.startedAt ?? 0) >= startOfDay
+        }.compactMap(\.sessionId))
+
+        let alive = ProcessCheck.alive(candidates.map { (pid: $0.pid ?? 0, procStart: $0.procStart) })
+        return (candidates.filter { alive.contains($0.pid ?? 0) }, startedToday)
+    }
+
+    private func apply(
+        scan: [SessionFile],
+        startedToday: Set<String>,
+        prompts: [String: String],
+        projects: [String],
+        oneMillion: Bool,
+        hooksInstalled: Bool
+    ) {
+        refreshing = false
+        oneMillionConfigured = oneMillion
+        self.hooksInstalled = hooksInstalled
+        sessionIdsStartedToday = startedToday
+        recentProjects = projects
+        // The refresh at launch runs alongside the first session scan, so today's count
+        // is only complete once that scan has landed.
+        if !statsPrimed {
+            statsPrimed = true
+            refreshStats()
+        }
+
+        let liveIds = Set(scan.compactMap(\.sessionId))
+        var flipped: [String] = []
+        var built: [Session] = []
+
+        for file in scan {
+            guard let id = file.sessionId, let pid = file.pid else { continue }
+            let statusChangedAt = Date(epochMilliseconds: file.statusUpdatedAt ?? file.updatedAt ?? file.startedAt ?? 0)
+            let isBusy = file.status == "busy"
+
+            if isBusy { busySince[id] = statusChangedAt }
+            if lastStatus[id] != file.status {
+                if lastStatus[id] != nil { flipped.append(id) }
+                lastStatus[id] = file.status
+            }
+
+            var state: SessionState = isBusy ? .busy(since: statusChangedAt) : .idle
+            if let wait = permissionWaits[id] {
+                if statusChangedAt > wait.at {
+                    permissionWaits[id] = nil
+                } else {
+                    state = .waitingPermission(message: wait.message)
+                }
+            }
+
+            let usage = usageCache[id]
+            built.append(Session(
+                id: id,
+                pid: pid,
+                name: file.name ?? file.cwd.map { ($0 as NSString).lastPathComponent } ?? String(id.prefix(8)),
+                cwd: file.cwd ?? "",
+                state: state,
+                lastPrompt: prompts[id],
+                usage: usage,
+                contextWindow: TranscriptTail.contextWindow(
+                    used: usage?.contextUsed ?? 0,
+                    oneMillionConfigured: oneMillion
+                )
+            ))
+        }
+
+        sessions = built.sorted(by: Self.order)
+        permissionWaits = permissionWaits.filter { liveIds.contains($0.key) }
+        lastStatus = lastStatus.filter { liveIds.contains($0.key) }
+        busySince = busySince.filter { liveIds.contains($0.key) }
+        usageCache = usageCache.filter { liveIds.contains($0.key) }
+        Task.detached(priority: .background) { [transcripts] in await transcripts.forget(sessionIds: liveIds) }
+
+        if !flipped.isEmpty { loadUsage(for: flipped) }
+    }
+
+    private static func order(_ lhs: Session, _ rhs: Session) -> Bool {
+        func rank(_ state: SessionState) -> Int {
+            switch state {
+            case .waitingPermission: 0
+            case .busy: 1
+            case .idle: 2
+            }
+        }
+        let (left, right) = (rank(lhs.state), rank(rhs.state))
+        return left == right ? lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending : left < right
+    }
+
+    // MARK: - Transcripts
+
+    private func loadUsage(for ids: [String]) {
+        guard !ids.isEmpty else { return }
+        Task.detached(priority: .utility) { [transcripts] in
+            var found: [String: TranscriptUsage] = [:]
+            for id in ids {
+                if let usage = await transcripts.usage(for: id) { found[id] = usage }
+            }
+            await self.applyUsage(found)
+        }
+    }
+
+    private func applyUsage(_ found: [String: TranscriptUsage]) {
+        guard !found.isEmpty else { return }
+        usageCache.merge(found) { _, new in new }
+        for index in sessions.indices {
+            guard let usage = found[sessions[index].id] else { continue }
+            sessions[index].usage = usage
+            sessions[index].contextWindow = TranscriptTail.contextWindow(
+                used: usage.contextUsed,
+                oneMillionConfigured: oneMillionConfigured
+            )
+        }
+    }
+
+    // MARK: - Hook events
+
+    private func drainEvents() {
+        Task.detached(priority: .utility) { [spool] in
+            let events = await spool.newEvents()
+            guard !events.isEmpty else { return }
+            await self.handle(events: events)
+        }
+    }
+
+    private func handle(events: [DeckEvent]) {
+        for event in events {
+            guard let id = event.sessionId else { continue }
+            let session = sessions.first { $0.id == id }
+            let project = (session?.cwd ?? event.cwd ?? "") as NSString
+
+            switch event.hookEventName {
+            case "Notification":
+                permissionWaits[id] = (event.message ?? "Waiting for your approval", Date())
+                notifier.permissionNeeded(
+                    sessionId: id,
+                    project: project.lastPathComponent,
+                    message: event.message
+                )
+
+            case "Stop":
+                clearWait(id)
+                if let since = busySince[id], Date().timeIntervalSince(since) >= 10 {
+                    notifier.sessionFinished(
+                        sessionId: id,
+                        name: session?.name ?? project.lastPathComponent,
+                        project: project.lastPathComponent
+                    )
+                }
+                busySince[id] = nil
+                loadUsage(for: [id])
+
+            case "UserPromptSubmit", "SessionEnd":
+                clearWait(id)
+
+            default:
+                break
+            }
+        }
+        refresh()
+    }
+
+    private func clearWait(_ id: String) {
+        permissionWaits[id] = nil
+        notifier.clearPermissionAlert(sessionId: id)
+    }
+}
