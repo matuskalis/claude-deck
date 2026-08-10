@@ -24,12 +24,10 @@ struct SessionRow: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                         if let model = shortModel {
-                            Text(model)
-                                .font(.system(size: 9, weight: .medium))
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 1)
-                                .background(Color.primary.opacity(0.08), in: Capsule())
-                                .foregroundStyle(.secondary)
+                            tag(model)
+                        }
+                        if session.parkedJobId != nil {
+                            tag("parked")
                         }
                         Spacer(minLength: 4)
                         Text(statusText)
@@ -72,6 +70,15 @@ struct SessionRow: View {
         .padding(.horizontal, 4)
         .onHover { hovering = $0 }
         .help("Bring this session's terminal window to the front")
+    }
+
+    private func tag(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 9, weight: .medium))
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1)
+            .background(Color.primary.opacity(0.08), in: Capsule())
+            .foregroundStyle(.secondary)
     }
 
     private var isBusy: Bool {

@@ -30,6 +30,11 @@ struct MenuContent: View {
                         .frame(maxHeight: 340)
                     }
 
+                    if !store.jobs.isEmpty {
+                        Divider()
+                        JobsSection(jobs: store.jobs, now: context.date)
+                    }
+
                     Divider()
                     UsageSection(usage: store.usage, wifi: store.wifi, now: context.date)
                 }
@@ -87,6 +92,9 @@ struct MenuContent: View {
             Spacer(minLength: 4)
             if store.waitingCount > 0 {
                 pill("\(store.waitingCount) waiting", .critical)
+            }
+            if store.blockedJobCount > 0 {
+                pill("\(store.blockedJobCount) blocked", .warning)
             }
             if store.busyCount > 0 {
                 pill("\(store.busyCount) busy", .warning)

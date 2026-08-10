@@ -12,10 +12,12 @@ final class SessionStore {
     private(set) var stats = StatsSnapshot()
     private(set) var usage = UsageSnapshot()
     private(set) var wifi = WifiStatus()
+    private(set) var jobs: [Job] = []
 
     @ObservationIgnored private let transcripts = TranscriptTail()
     @ObservationIgnored private let statsReader = StatsReader()
     @ObservationIgnored private let usageReader = UsageReader()
+    @ObservationIgnored private let jobsReader = JobsReader()
     @ObservationIgnored private let history = HistoryTail()
     @ObservationIgnored private let spool = EventsSpool()
     @ObservationIgnored private let toolSpool = ToolSpool()
@@ -31,6 +33,11 @@ final class SessionStore {
     /// One entry per threshold already announced, keyed by the window it applies to so the
     /// same limit alerts again after it resets.
     @ObservationIgnored private var announcedThresholds: Set<String> = []
+    /// Job ids whose processes are alive, from the background session files.
+    @ObservationIgnored private var runningJobIds: Set<String> = []
+    /// The last `needs` each job was announced for, so a new question alerts again but the
+    /// same one does not.
+    @ObservationIgnored private var announcedNeeds: [String: String] = [:]
 
     /// Sessions blocked on a permission prompt. There is no on-disk signal for this,
     /// so the state comes from a hook event and is cleared once the session writes a
@@ -54,6 +61,10 @@ final class SessionStore {
 
     var waitingCount: Int {
         sessions.count { if case .waitingPermission = $0.state { return true } else { return false } }
+    }
+
+    var blockedJobCount: Int {
+        jobs.count { $0.isBlocked }
     }
 
     func start() {
@@ -113,11 +124,30 @@ final class SessionStore {
     // MARK: - Plan limits and Wi-Fi
 
     private func refreshMeters() {
-        Task.detached(priority: .utility) { [usageReader] in
+        Task.detached(priority: .utility) { [usageReader, jobsReader] in
             let usage = await usageReader.snapshot()
             let wifi = WifiStatus.read()
-            await self.apply(usage: usage, wifi: wifi)
+            let jobs = await jobsReader.snapshot()
+            await self.apply(usage: usage, wifi: wifi, jobs: jobs)
         }
+    }
+
+    private func apply(usage: UsageSnapshot, wifi: WifiStatus, jobs incoming: [Job]) {
+        jobs = incoming.map { job in
+            var job = job
+            job.running = runningJobIds.contains(job.id)
+            return job
+        }
+
+        for job in jobs where job.isBlocked {
+            guard let waiting = job.waitingOn, !waiting.isEmpty, announcedNeeds[job.id] != waiting else { continue }
+            announcedNeeds[job.id] = waiting
+            notifier.jobBlocked(job: job)
+        }
+        let blocked = Set(jobs.filter(\.isBlocked).map(\.id))
+        announcedNeeds = announcedNeeds.filter { blocked.contains($0.key) }
+
+        apply(usage: usage, wifi: wifi)
     }
 
     private func apply(usage: UsageSnapshot, wifi: WifiStatus) {
@@ -181,6 +211,7 @@ final class SessionStore {
             let installed = HookInstaller.isInstalled
             await self.apply(
                 scan: scan.live,
+                runningJobIds: scan.runningJobIds,
                 startedToday: scan.startedToday,
                 prompts: prompts,
                 projects: projects,
@@ -190,7 +221,10 @@ final class SessionStore {
         }
     }
 
-    private nonisolated static func scanSessions() -> (live: [SessionFile], startedToday: Set<String>) {
+    /// Background sessions are scanned too, but they are not listed as sessions: they have
+    /// no terminal to go back to, and their job directory says far more about them than
+    /// their session file does. All they contribute here is which jobs are still running.
+    private nonisolated static func scanSessions() -> (live: [SessionFile], runningJobIds: Set<String>, startedToday: Set<String>) {
         let directory = URL(fileURLWithPath: NSHomeDirectory()).appending(path: ".claude/sessions")
         let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
         let decoder = JSONDecoder()
@@ -201,19 +235,25 @@ final class SessionStore {
                 guard let data = try? Data(contentsOf: url) else { return nil }
                 return try? decoder.decode(SessionFile.self, from: data)
             }
-            .filter { $0.sessionId != nil && $0.pid != nil && $0.kind != "bg" }
+            .filter { $0.sessionId != nil && $0.pid != nil }
 
         let startOfDay = Calendar.current.startOfDay(for: Date())
         let startedToday = Set(candidates.filter {
-            Date(epochMilliseconds: $0.startedAt ?? 0) >= startOfDay
+            $0.kind != "bg" && Date(epochMilliseconds: $0.startedAt ?? 0) >= startOfDay
         }.compactMap(\.sessionId))
 
         let alive = ProcessCheck.alive(candidates.map { (pid: $0.pid ?? 0, procStart: $0.procStart) })
-        return (candidates.filter { alive.contains($0.pid ?? 0) }, startedToday)
+        let live = candidates.filter { alive.contains($0.pid ?? 0) }
+        return (
+            live.filter { $0.kind != "bg" },
+            Set(live.filter { $0.kind == "bg" }.compactMap(\.jobId)),
+            startedToday
+        )
     }
 
     private func apply(
         scan: [SessionFile],
+        runningJobIds: Set<String>,
         startedToday: Set<String>,
         prompts: [String: String],
         projects: [String],
@@ -224,6 +264,10 @@ final class SessionStore {
         oneMillionConfigured = oneMillion
         self.hooksInstalled = hooksInstalled
         sessionIdsStartedToday = startedToday
+        if self.runningJobIds != runningJobIds {
+            self.runningJobIds = runningJobIds
+            for index in jobs.indices { jobs[index].running = runningJobIds.contains(jobs[index].id) }
+        }
         recentProjects = projects
         // The refresh at launch runs alongside the first session scan, so today's count
         // is only complete once that scan has landed.
@@ -269,7 +313,8 @@ final class SessionStore {
                     used: usage?.contextUsed ?? 0,
                     oneMillionConfigured: oneMillion
                 ),
-                tool: currentTool[id]
+                tool: currentTool[id],
+                parkedJobId: file.parkedJobId
             ))
         }
 

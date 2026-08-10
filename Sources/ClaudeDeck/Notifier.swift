@@ -38,6 +38,16 @@ final class Notifier {
         )
     }
 
+    /// A background job that is blocked will sit there forever, and there is no terminal
+    /// window anywhere showing that it is waiting.
+    func jobBlocked(job: Job) {
+        post(
+            identifier: "job-\(job.id)",
+            title: "⏸ \(job.name) is blocked",
+            body: job.waitingOn ?? "Waiting for you"
+        )
+    }
+
     func usageThreshold(limit: UsageLimit, threshold: Int) {
         post(
             identifier: "usage-\(limit.id)-\(threshold)",

@@ -14,6 +14,10 @@ struct SessionFile: Decodable, Sendable {
     var status: String?
     var updatedAt: Double?
     var statusUpdatedAt: Double?
+    /// Set on a background session; the directory under ~/.claude/jobs is named after it.
+    var jobId: String?
+    /// Set on an interactive session that backgrounded a job and is waiting on it.
+    var parkedJobId: String?
 }
 
 /// One line in ~/.claude/claude-deck/events.jsonl, spooled by our hooks.
@@ -54,6 +58,8 @@ struct Session: Identifiable, Sendable, Equatable {
     var usage: TranscriptUsage?
     var contextWindow: Int
     var tool: String?
+    /// Present when this session backgrounded a job and is waiting on it.
+    var parkedJobId: String?
 
     var project: String { (cwd as NSString).lastPathComponent }
 
