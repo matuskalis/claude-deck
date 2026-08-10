@@ -1,0 +1,29 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The package needs Swift 6.2, so pick the newest toolchain the image ships
+      # rather than whichever one happens to be selected.
+      - name: Select the newest Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+
+      - run: swift --version
+
+      - name: Build the app bundle
+        run: make build
+
+      - name: Check the bundle came out whole
+        run: |
+          test -x "dist/Claude Deck.app/Contents/MacOS/ClaudeDeck"
+          test -f "dist/Claude Deck.app/Contents/Info.plist"
+          codesign --verify --verbose "dist/Claude Deck.app"
