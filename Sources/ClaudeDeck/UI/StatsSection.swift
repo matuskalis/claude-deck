@@ -26,11 +26,11 @@ struct StatsSection: View {
                     Sparkline(values: stats.recentDays.map(\.tokens), color: Severity.normal.color)
                         .frame(height: 20)
                     HStack {
-                        Text(stats.recentDays.first?.date ?? "")
+                        Text(Self.shortDay(stats.recentDays.first?.date))
                         Spacer()
                         Text("last \(stats.recentDays.count) days")
                         Spacer()
-                        Text(stats.recentDays.last?.date ?? "")
+                        Text(Self.shortDay(stats.recentDays.last?.date))
                     }
                     .font(.system(size: 9))
                     .foregroundStyle(.tertiary)
@@ -124,7 +124,12 @@ struct StatsSection: View {
     }
 
     private var asOfDate: String {
-        guard let date = stats.lifetimeAsOf else { return "" }
+        Self.shortDay(stats.lifetimeAsOf)
+    }
+
+    /// `2026-08-03` as it is stored, `Aug 3` as it is read.
+    static func shortDay(_ date: String?) -> String {
+        guard let date else { return "" }
         let parser = DateFormatter()
         parser.locale = Locale(identifier: "en_US_POSIX")
         parser.dateFormat = "yyyy-MM-dd"

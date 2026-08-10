@@ -10,7 +10,7 @@ jobs:
   build:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # The package needs Swift 6.2, so pick the newest toolchain the image ships
       # rather than whichever one happens to be selected.
