@@ -18,11 +18,13 @@ final class SessionStore {
     @ObservationIgnored private let usageReader = UsageReader()
     @ObservationIgnored private let history = HistoryTail()
     @ObservationIgnored private let spool = EventsSpool()
+    @ObservationIgnored private let toolSpool = ToolSpool()
     @ObservationIgnored private let notifier = Notifier()
 
     @ObservationIgnored private var sessionsWatcher: DirWatcher?
     @ObservationIgnored private var spoolDirectoryWatcher: DirWatcher?
     @ObservationIgnored private var spoolFileWatcher: DirWatcher?
+    @ObservationIgnored private var toolFileWatcher: DirWatcher?
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var statsTimer: Timer?
     @ObservationIgnored private var meterTimer: Timer?
@@ -34,6 +36,10 @@ final class SessionStore {
     /// so the state comes from a hook event and is cleared once the session writes a
     /// newer status than the moment the event arrived.
     @ObservationIgnored private var permissionWaits: [String: (message: String, at: Date)] = [:]
+    /// The tool each session is inside right now, set by PreToolUse and cleared by
+    /// PostToolUse. Also cleared when a turn ends, so a killed session does not sit there
+    /// claiming to be running something.
+    @ObservationIgnored private var currentTool: [String: String] = [:]
     @ObservationIgnored private var lastStatus: [String: String] = [:]
     @ObservationIgnored private var busySince: [String: Date] = [:]
     @ObservationIgnored private var usageCache: [String: TranscriptUsage] = [:]
@@ -59,13 +65,15 @@ final class SessionStore {
         }
         // A directory watcher never sees appends to an existing file, so the spool
         // itself is watched too; the directory watcher only catches its recreation.
+        // The tool spool is rotated by replacing the file, so the directory watcher is what
+        // re-arms the file watcher onto the new inode.
         spoolDirectoryWatcher = DirWatcher(url: EventsSpool.directory) { [weak self] in
             Task { @MainActor in
-                self?.watchSpoolFile()
+                self?.watchSpoolFiles()
                 self?.drainEvents()
             }
         }
-        watchSpoolFile()
+        watchSpoolFiles()
 
         timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -85,8 +93,11 @@ final class SessionStore {
         refreshMeters()
     }
 
-    private func watchSpoolFile() {
+    private func watchSpoolFiles() {
         spoolFileWatcher = DirWatcher(url: EventsSpool.url) { [weak self] in
+            Task { @MainActor in self?.drainEvents() }
+        }
+        toolFileWatcher = DirWatcher(url: ToolSpool.url) { [weak self] in
             Task { @MainActor in self?.drainEvents() }
         }
     }
@@ -257,7 +268,8 @@ final class SessionStore {
                 contextWindow: TranscriptTail.contextWindow(
                     used: usage?.contextUsed ?? 0,
                     oneMillionConfigured: oneMillion
-                )
+                ),
+                tool: currentTool[id]
             ))
         }
 
@@ -266,6 +278,7 @@ final class SessionStore {
         lastStatus = lastStatus.filter { liveIds.contains($0.key) }
         busySince = busySince.filter { liveIds.contains($0.key) }
         usageCache = usageCache.filter { liveIds.contains($0.key) }
+        currentTool = currentTool.filter { liveIds.contains($0.key) }
         Task.detached(priority: .background) { [transcripts] in await transcripts.forget(sessionIds: liveIds) }
 
         if !flipped.isEmpty { loadUsage(for: flipped) }
@@ -312,8 +325,10 @@ final class SessionStore {
     // MARK: - Hook events
 
     private func drainEvents() {
-        Task.detached(priority: .utility) { [spool] in
-            let events = await spool.newEvents()
+        Task.detached(priority: .utility) { [spool, toolSpool] in
+            // Tool events first, so that a Stop arriving in the same batch as the
+            // PreToolUse before it still wins and clears the label.
+            let events = await toolSpool.newEvents() + spool.newEvents()
             guard !events.isEmpty else { return }
             await self.handle(events: events)
         }
@@ -334,8 +349,15 @@ final class SessionStore {
                     message: event.message
                 )
 
+            case "PreToolUse":
+                currentTool[id] = event.toolName
+
+            case "PostToolUse":
+                currentTool[id] = nil
+
             case "Stop":
                 clearWait(id)
+                currentTool[id] = nil
                 if let since = busySince[id], Date().timeIntervalSince(since) >= 10 {
                     notifier.sessionFinished(
                         sessionId: id,
@@ -348,10 +370,16 @@ final class SessionStore {
 
             case "UserPromptSubmit", "SessionEnd":
                 clearWait(id)
+                currentTool[id] = nil
 
             default:
                 break
             }
+        }
+        // Applied here as well as in the next scan: a tool label that waited on the 3 s
+        // refresh would be stale by the time it appeared.
+        for index in sessions.indices {
+            sessions[index].tool = currentTool[sessions[index].id]
         }
         refresh()
     }

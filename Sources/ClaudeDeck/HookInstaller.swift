@@ -16,7 +16,7 @@ enum HookInstallError: LocalizedError {
     }
 }
 
-/// Installs the four hooks that feed our event spool.
+/// Installs the hooks that feed our event spools.
 ///
 /// settings.json is the only file in the user's config the app writes to, so the
 /// edit is a text splice: a hook is added to the existing `hooks` object, or to an
@@ -24,10 +24,21 @@ enum HookInstallError: LocalizedError {
 /// other byte of the file is left exactly as it was. A timestamped backup is taken
 /// first and the result is re-checked before it is written.
 enum HookInstaller {
-    static let eventNames = ["Notification", "Stop", "UserPromptSubmit", "SessionEnd"]
+    static let eventNames = [
+        "Notification", "Stop", "StopFailure", "UserPromptSubmit", "SessionEnd",
+        "PreToolUse", "PostToolUse",
+    ]
+
+    /// Tool events fire on every single tool call and their payload carries the whole
+    /// `tool_input`, so they get their own spool and a helper that keeps it bounded.
+    /// The other events are rare enough to append inline.
+    static let toolEventNames: Set<String> = ["PreToolUse", "PostToolUse"]
+
     static let command = "mkdir -p ~/.claude/claude-deck; { cat; printf '\\n'; } >> ~/.claude/claude-deck/events.jsonl"
+    static let toolCommand = "\"$HOME/.claude/claude-deck/spool\""
 
     static let settingsURL = URL(fileURLWithPath: NSHomeDirectory()).appending(path: ".claude/settings.json")
+    static let helperURL = EventsSpool.directory.appending(path: "spool")
 
     static var isInstalled: Bool {
         missingEventNames().isEmpty
@@ -36,6 +47,7 @@ enum HookInstaller {
     static func install() throws {
         let missing = missingEventNames()
         guard !missing.isEmpty else { return }
+        try writeHelper()
 
         // Writing atomically through a symlink would replace the link with a regular
         // file and leave the real settings.json untouched.
@@ -60,11 +72,11 @@ enum HookInstaller {
                 if let arrayStart = valueStart(of: name, inObjectAt: hooksValue, bytes: bytes) {
                     guard bytes[arrayStart] == UInt8(ascii: "[") else { throw HookInstallError.unsupportedShape(name) }
                     let indent = lineIndent(bytes, at: arrayStart) + "  "
-                    let merged = insert(entries: [matcherJSON(indent: indent)], into: bytes, afterOpening: arrayStart)
+                    let merged = insert(entries: [matcherJSON(indent: indent, for: name)], into: bytes, afterOpening: arrayStart)
                     bytes = Array(merged.utf8)
                 } else {
                     let indent = lineIndent(bytes, at: hooksValue) + "  "
-                    let added = insert(entries: ["\"\(name)\": \(hookArrayJSON(indent: indent))"], into: bytes, afterOpening: hooksValue)
+                    let added = insert(entries: ["\"\(name)\": \(hookArrayJSON(indent: indent, for: name))"], into: bytes, afterOpening: hooksValue)
                     bytes = Array(added.utf8)
                 }
             }
@@ -122,15 +134,50 @@ enum HookInstaller {
         }
     }
 
+    // MARK: - The tool spool helper
+
+    /// Written next to the spools rather than inlined into settings.json: rotation needs
+    /// several statements, and a multi-line shell command in a config file is a worse
+    /// thing to hand someone than a script they can read.
+    ///
+    /// Parallel tool calls append concurrently, so a very large `tool_input` can interleave
+    /// with another write and produce a line that will not parse. Those lines are dropped
+    /// on read; a missed tool label is not worth locking for.
+    private static let helperScript = """
+    #!/bin/sh
+    # Written by Claude Deck. Spools PreToolUse/PostToolUse payloads, one per line, and
+    # keeps the file bounded because tool_input can carry the full contents of a file.
+    #
+    # A PreToolUse hook that exits non-zero blocks the tool call it fired for. Nothing a
+    # menu bar app does is worth stopping someone's Bash call, so there is no `set -e`,
+    # every step tolerates failure, and the script always exits 0.
+    dir="$HOME/.claude/claude-deck"
+    file="$dir/tools.jsonl"
+    mkdir -p "$dir" 2>/dev/null
+    { cat; printf '\\n'; } >> "$file" 2>/dev/null
+    size=$(stat -f%z "$file" 2>/dev/null || echo 0)
+    if [ "$size" -gt 1000000 ]; then
+      tail -c 200000 "$file" > "$file.tmp" 2>/dev/null && mv "$file.tmp" "$file" 2>/dev/null
+    fi
+    exit 0
+
+    """
+
+    private static func writeHelper() throws {
+        try FileManager.default.createDirectory(at: EventsSpool.directory, withIntermediateDirectories: true)
+        try Data(helperScript.utf8).write(to: helperURL, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: helperURL.path)
+    }
+
     // MARK: - JSON fragments
 
-    private static func matcherJSON(indent: String) -> String {
+    private static func matcherJSON(indent: String, for name: String) -> String {
         [
             "{",
             "\(indent)  \"hooks\": [",
             "\(indent)    {",
             "\(indent)      \"type\": \"command\",",
-            "\(indent)      \"command\": \(jsonString(command)),",
+            "\(indent)      \"command\": \(jsonString(toolEventNames.contains(name) ? toolCommand : command)),",
             "\(indent)      \"timeout\": 5000",
             "\(indent)    }",
             "\(indent)  ]",
@@ -138,13 +185,13 @@ enum HookInstaller {
         ].joined(separator: "\n")
     }
 
-    private static func hookArrayJSON(indent: String) -> String {
-        "[\n\(indent)  \(matcherJSON(indent: indent + "  "))\n\(indent)]"
+    private static func hookArrayJSON(indent: String, for name: String) -> String {
+        "[\n\(indent)  \(matcherJSON(indent: indent + "  ", for: name))\n\(indent)]"
     }
 
     private static func hooksObjectJSON(indent: String) -> String {
         let body = eventNames
-            .map { "\(indent)  \"\($0)\": \(hookArrayJSON(indent: indent + "  "))" }
+            .map { "\(indent)  \"\($0)\": \(hookArrayJSON(indent: indent + "  ", for: $0))" }
             .joined(separator: ",\n")
         return "{\n\(body)\n\(indent)}"
     }

@@ -49,6 +49,44 @@ actor EventsSpool {
     }
 }
 
+/// Tails ~/.claude/claude-deck/tools.jsonl, which the spool helper writes on every
+/// PreToolUse and PostToolUse.
+///
+/// Kept apart from `EventsSpool` because the volume is completely different: one line per
+/// tool call, each carrying the whole `tool_input`. The helper rotates the file with
+/// `tail -c` once it passes a megabyte, which makes it shorter than the offset we are
+/// holding; that rewinds this reader and replays the tail. Harmless — a replayed
+/// PreToolUse only re-sets a label the next PostToolUse clears.
+actor ToolSpool {
+    static let url = EventsSpool.directory.appending(path: "tools.jsonl")
+
+    private var offset = 0
+
+    init() {
+        offset = Self.url.currentFileSize ?? 0
+    }
+
+    func newEvents() -> [DeckEvent] {
+        guard let size = Self.url.currentFileSize else {
+            offset = 0
+            return []
+        }
+        if offset > size { offset = 0 }
+        guard size > offset, let handle = try? FileHandle(forReadingFrom: Self.url) else { return [] }
+        defer { try? handle.close() }
+
+        guard (try? handle.seek(toOffset: UInt64(offset))) != nil,
+              let data = try? handle.readToEnd(), !data.isEmpty,
+              let lastNewline = data.lastIndex(of: UInt8(ascii: "\n")) else { return [] }
+        offset += data.distance(from: data.startIndex, to: lastNewline) + 1
+
+        let decoder = JSONDecoder()
+        return data[data.startIndex...lastNewline]
+            .split(separator: UInt8(ascii: "\n"))
+            .compactMap { try? decoder.decode(DeckEvent.self, from: Data($0)) }
+    }
+}
+
 /// Tails ~/.claude/history.jsonl for the most recent prompt of each session.
 /// The whole file is read once (a couple of megabytes), then only appended bytes.
 actor HistoryTail {

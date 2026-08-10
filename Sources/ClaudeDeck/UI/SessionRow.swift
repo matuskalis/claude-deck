@@ -105,7 +105,8 @@ struct SessionRow: View {
 
     private var statusText: String {
         switch session.state {
-        case .busy(let since): "busy \(Self.duration(now.timeIntervalSince(since)))"
+        case .busy(let since):
+            "\(session.tool ?? "busy") \(Self.duration(now.timeIntervalSince(since)))"
         case .waitingPermission(let message): "waiting: \(message)"
         case .idle: "idle"
         }

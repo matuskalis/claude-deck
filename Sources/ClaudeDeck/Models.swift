@@ -22,12 +22,14 @@ struct DeckEvent: Decodable, Sendable {
     var sessionId: String?
     var cwd: String?
     var message: String?
+    var toolName: String?
 
     enum CodingKeys: String, CodingKey {
         case hookEventName = "hook_event_name"
         case sessionId = "session_id"
         case cwd
         case message
+        case toolName = "tool_name"
     }
 }
 
@@ -51,6 +53,7 @@ struct Session: Identifiable, Sendable, Equatable {
     var lastPrompt: String?
     var usage: TranscriptUsage?
     var contextWindow: Int
+    var tool: String?
 
     var project: String { (cwd as NSString).lastPathComponent }
 
