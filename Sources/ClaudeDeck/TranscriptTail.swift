@@ -120,4 +120,8 @@ struct AssistantLine: Decodable {
     var type: String?
     var timestamp: String?
     var message: Message?
+    /// The directory the session was started in. The project directory under
+    /// ~/.claude/projects has "/" replaced by "-", which is ambiguous to undo, so this is
+    /// the only reliable way to name a project.
+    var cwd: String?
 }

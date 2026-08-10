@@ -73,6 +73,8 @@ struct StatsSnapshot: Sendable, Equatable {
     var prices = Prices()
     /// First assistant message of the local day, which is what the burn rate divides by.
     var todayStarted: Date?
+    /// Today's tokens by project directory name, on the same once-per-request basis.
+    var todayByProject: [String: TokenTotals] = [:]
 
     var todayTotals: TokenTotals { today.values.reduce(TokenTotals(), +) }
     var lifetimeTotals: TokenTotals { lifetime.values.reduce(TokenTotals(), +) }
@@ -105,6 +107,7 @@ actor StatsReader {
         var model: String
         var timestamp: String
         var totals: TokenTotals
+        var project: String
     }
 
     /// UTC stamp the scan starts at, and the thing that invalidates it: it moves only when
@@ -136,12 +139,14 @@ actor StatsReader {
         }
         let startOfToday = Self.utcStamp(Calendar.current.startOfDay(for: Date()))
         var today: [String: TokenTotals] = [:]
+        var todayByProject: [String: TokenTotals] = [:]
         var live: [String: TokenTotals] = [:]
         var firstToday: String?
         for request in requests.values {
             live[request.model] = (live[request.model] ?? TokenTotals()) + request.totals
             guard request.timestamp >= startOfToday else { continue }
             today[request.model] = (today[request.model] ?? TokenTotals()) + request.totals
+            todayByProject[request.project] = (todayByProject[request.project] ?? TokenTotals()) + request.totals
             if firstToday == nil || request.timestamp < firstToday! { firstToday = request.timestamp }
         }
 
@@ -164,7 +169,8 @@ actor StatsReader {
             lifetimeIncludesLive: toppedUp,
             recentDays: recentDays,
             prices: prices,
-            todayStarted: firstToday.flatMap(Self.parse)
+            todayStarted: firstToday.flatMap(Self.parse),
+            todayByProject: todayByProject
         )
     }
 
@@ -277,7 +283,8 @@ actor StatsReader {
                 output: usage.outputTokens ?? 0,
                 cacheCreation: usage.cacheCreationInputTokens ?? 0,
                 cacheRead: usage.cacheReadInputTokens ?? 0
-            )
+            ),
+            project: entry.cwd.map { ($0 as NSString).lastPathComponent } ?? "unknown"
         ))
     }
 

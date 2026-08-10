@@ -29,6 +29,15 @@ struct SessionRow: View {
                         if session.parkedJobId != nil {
                             tag("parked")
                         }
+                        if session.isStale(now: now) {
+                            Text("stale")
+                                .font(.system(size: 9, weight: .medium))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Severity.warning.color.opacity(0.16), in: Capsule())
+                                .foregroundStyle(Severity.warning.color)
+                                .help("Idle a while with most of its context used")
+                        }
                         Spacer(minLength: 4)
                         Text(statusText)
                             .foregroundStyle(.secondary)

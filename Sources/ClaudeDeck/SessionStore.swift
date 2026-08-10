@@ -50,6 +50,7 @@ final class SessionStore {
     /// Turns that ended on an API error. Cleared only by the next prompt: the session goes
     /// idle the moment it fails, so nothing in its own status distinguishes the two.
     @ObservationIgnored private var failures: [String: String] = [:]
+    @ObservationIgnored private var contextAnnounced: Set<String> = []
     @ObservationIgnored private var lastStatus: [String: String] = [:]
     @ObservationIgnored private var busySince: [String: Date] = [:]
     @ObservationIgnored private var usageCache: [String: TranscriptUsage] = [:]
@@ -324,7 +325,8 @@ final class SessionStore {
                     oneMillionConfigured: oneMillion
                 ),
                 tool: currentTool[id],
-                parkedJobId: file.parkedJobId
+                parkedJobId: file.parkedJobId,
+                idleSince: isBusy ? nil : statusChangedAt
             ))
         }
 
@@ -335,6 +337,7 @@ final class SessionStore {
         usageCache = usageCache.filter { liveIds.contains($0.key) }
         currentTool = currentTool.filter { liveIds.contains($0.key) }
         failures = failures.filter { liveIds.contains($0.key) }
+        contextAnnounced = contextAnnounced.filter { liveIds.contains($0) }
         Task.detached(priority: .background) { [transcripts] in await transcripts.forget(sessionIds: liveIds) }
 
         if !flipped.isEmpty { loadUsage(for: flipped) }
@@ -376,6 +379,18 @@ final class SessionStore {
                 used: usage.contextUsed,
                 oneMillionConfigured: oneMillionConfigured
             )
+            announceContext(sessions[index])
+        }
+    }
+
+    /// Re-arms below 70%, so a session that compacts and fills up again alerts a second
+    /// time rather than going quiet for the rest of its life.
+    private func announceContext(_ session: Session) {
+        guard let percent = session.contextPercent else { return }
+        if percent < 70 {
+            contextAnnounced.remove(session.id)
+        } else if percent >= 85, contextAnnounced.insert(session.id).inserted {
+            notifier.contextFilling(name: session.name, percent: percent)
         }
     }
 
@@ -403,7 +418,8 @@ final class SessionStore {
                 notifier.permissionNeeded(
                     sessionId: id,
                     project: project.lastPathComponent,
-                    message: event.message
+                    message: event.message,
+                    pid: session?.pid
                 )
 
             case "PreToolUse":
@@ -419,7 +435,8 @@ final class SessionStore {
                     notifier.sessionFinished(
                         sessionId: id,
                         name: session?.name ?? project.lastPathComponent,
-                        project: project.lastPathComponent
+                        project: project.lastPathComponent,
+                        pid: session?.pid
                     )
                 }
                 busySince[id] = nil

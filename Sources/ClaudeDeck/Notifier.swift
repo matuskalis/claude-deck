@@ -8,8 +8,19 @@ final class Notifier {
     private let center = UNUserNotificationCenter.current()
     private var lastPermissionAlert: [String: Date] = [:]
 
+    static let focusAction = "focus"
+    static let sessionCategory = "session"
+
     func requestAuthorization() {
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        // A banner about a session is only useful if it can take you to it.
+        center.setNotificationCategories([
+            UNNotificationCategory(
+                identifier: Self.sessionCategory,
+                actions: [UNNotificationAction(identifier: Self.focusAction, title: "Focus", options: [.foreground])],
+                intentIdentifiers: []
+            )
+        ])
     }
 
     /// Banners fail silently when macOS has notifications turned off for the app,
@@ -18,7 +29,7 @@ final class Notifier {
         await center.notificationSettings().authorizationStatus == .denied
     }
 
-    func permissionNeeded(sessionId: String, project: String, message: String?) {
+    func permissionNeeded(sessionId: String, project: String, message: String?, pid: Int32?) {
         let now = Date()
         if let last = lastPermissionAlert[sessionId], now.timeIntervalSince(last) < 5 { return }
         lastPermissionAlert[sessionId] = now
@@ -26,15 +37,25 @@ final class Notifier {
         post(
             identifier: "perm-\(sessionId)",
             title: "⏸ \(project) needs you",
-            body: message ?? "Waiting for your approval"
+            body: message ?? "Waiting for your approval",
+            pid: pid
         )
     }
 
-    func sessionFinished(sessionId: String, name: String, project: String) {
+    func sessionFinished(sessionId: String, name: String, project: String, pid: Int32?) {
         post(
             identifier: "done-\(sessionId)-\(Int(Date().timeIntervalSince1970 * 1000))",
             title: "✅ \(name) finished",
-            body: project
+            body: project,
+            pid: pid
+        )
+    }
+
+    func contextFilling(name: String, percent: Int) {
+        post(
+            identifier: "context-\(name)",
+            title: "\(name) is at \(percent)% context",
+            body: "Compact it now rather than mid-task."
         )
     }
 
@@ -86,11 +107,15 @@ final class Notifier {
         center.removeDeliveredNotifications(withIdentifiers: ["perm-\(sessionId)"])
     }
 
-    private func post(identifier: String, title: String, body: String) {
+    private func post(identifier: String, title: String, body: String, pid: Int32? = nil) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
         content.sound = .default
+        if let pid {
+            content.categoryIdentifier = Self.sessionCategory
+            content.userInfo = ["pid": Int(pid), "name": title]
+        }
         let request = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
         center.add(request) { _ in }
     }

@@ -62,4 +62,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     ) async -> UNNotificationPresentationOptions {
         [.banner, .sound]
     }
+
+    /// Tapping the banner, or its Focus button, goes to the session it is about.
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        let info = response.notification.request.content.userInfo
+        guard let pid = info["pid"] as? Int else { return }
+        let name = info["name"] as? String ?? "that session"
+        await MainActor.run { Launcher.focus(pid: Int32(pid), name: name) }
+    }
 }

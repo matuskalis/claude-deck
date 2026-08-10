@@ -4,6 +4,14 @@ import SwiftUI
 struct MenuContent: View {
     let store: SessionStore
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var search = ""
+
+    private var filtered: [Session] {
+        guard !search.isEmpty else { return store.sessions }
+        return store.sessions.filter {
+            $0.name.localizedCaseInsensitiveContains(search) || $0.shortPath.localizedCaseInsensitiveContains(search)
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -19,9 +27,18 @@ struct MenuContent: View {
                             .padding(.horizontal, 12)
                             .padding(.vertical, 10)
                     } else {
+                        if store.sessions.count > 6 {
+                            TextField("Filter", text: $search)
+                                .textFieldStyle(.roundedBorder)
+                                .controlSize(.small)
+                                .font(.system(size: 11))
+                                .padding(.horizontal, 12)
+                                .padding(.top, 6)
+                        }
+
                         ScrollView {
                             VStack(alignment: .leading, spacing: 0) {
-                                ForEach(store.sessions) { session in
+                                ForEach(filtered) { session in
                                     SessionRow(session: session, now: context.date)
                                 }
                             }

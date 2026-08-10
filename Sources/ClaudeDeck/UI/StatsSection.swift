@@ -72,6 +72,15 @@ struct StatsSection: View {
                 row(model, stats.today[model]?.all ?? 0)
             }
 
+            if !stats.todayByProject.isEmpty {
+                Text("Today by project")
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 4)
+                ForEach(topProjects, id: \.name) { project in
+                    row(project.name, project.tokens)
+                }
+            }
+
             Text(stats.lifetimeIncludesLive
                  ? "Lifetime per model, Claude Code's counter \(asOfDate) plus transcripts since"
                  : "Lifetime per model, Claude Code's own counter \(asOf)")
@@ -112,6 +121,14 @@ struct StatsSection: View {
         var summary = "\(sessions) · \(Self.compact(stats.todayTotals.all)) tok · ~\(Self.money(estimate.usd)) est"
         if let burn = stats.burnRate { summary += " · \(Self.money(burn))/h" }
         return summary
+    }
+
+    private var topProjects: [(name: String, tokens: Int)] {
+        stats.todayByProject
+            .map { (name: $0.key, tokens: $0.value.all) }
+            .sorted { $0.tokens > $1.tokens }
+            .prefix(5)
+            .map { $0 }
     }
 
     private var unpricedToday: Int {

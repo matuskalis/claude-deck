@@ -63,6 +63,15 @@ struct Session: Identifiable, Sendable, Equatable {
     var tool: String?
     /// Present when this session backgrounded a job and is waiting on it.
     var parkedJobId: String?
+    /// When an idle session went idle. Nil while it is working.
+    var idleSince: Date?
+
+    /// An idle session holding most of a context window is one to finish or restart
+    /// deliberately, rather than discover at 100% mid-task.
+    func isStale(now: Date) -> Bool {
+        guard let idleSince, let percent = contextPercent, percent >= 70 else { return false }
+        return now.timeIntervalSince(idleSince) > 30 * 60
+    }
 
     var project: String { (cwd as NSString).lastPathComponent }
 
