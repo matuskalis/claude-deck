@@ -12,7 +12,7 @@ and what today has cost. It watches background jobs, which have no window to loo
 notifies you when a session finishes, blocks, or dies on a rate limit, takes you back to
 the terminal a session is running in, and starts new ones.
 
-Four tabs, all the same height, none of them scrolling:
+Four tabs, one size, none of them scrolling:
 
 | | |
 |---|---|
@@ -21,7 +21,7 @@ Four tabs, all the same height, none of them scrolling:
 | **Changelog** | what changed in Claude Code, from the file it already keeps on disk |
 | **News** | what changed across the other AI coding tools, summarised on demand |
 
-**Nothing scrolls.** A page that does not fit its box is a page trying to be two pages, so
+**Nothing scrolls, with three exceptions.** A page that does not fit its box is a page trying to be two pages, so
 the deck was split rather than made scrollable: sessions and jobs on one tab, everything
 about cost on another. The two list-shaped tabs are master and detail — headlines above, the
 selected one written out below — because 360 releases and eight articles were never going to

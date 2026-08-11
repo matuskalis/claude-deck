@@ -45,7 +45,13 @@ struct StatsSection: View {
             }
 
             DisclosureGroup(isExpanded: $showingDetail) {
-                detail
+                // The longest thing in the app: four token rows, a row per model, five
+                // projects, seven days and three paragraphs of caveat. It gets a scrollbar
+                // of its own so the page around it stays the size it was.
+                ScrollView {
+                    detail
+                }
+                .frame(maxHeight: 210)
             } label: {
                 Text(showingDetail ? "Hide breakdown" : "Show breakdown")
                     .foregroundStyle(.secondary)

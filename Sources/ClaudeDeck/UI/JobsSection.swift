@@ -96,30 +96,35 @@ private struct JobRow: View {
 
             if !job.timeline.isEmpty {
                 DisclosureGroup(isExpanded: $expanded) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        ForEach(job.timeline.reversed()) { entry in
-                            VStack(alignment: .leading, spacing: 1) {
-                                HStack {
-                                    Text(entry.state ?? "")
-                                    Spacer()
-                                    if let at = entry.at {
-                                        Text("\(SessionRow.duration(now.timeIntervalSince(at))) ago")
-                                            .monospacedDigit()
+                    // Bounded and scrolled: a timeline note can be a paragraph, and three of
+                    // them would otherwise push the rest of the page out of its box.
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 3) {
+                            ForEach(job.timeline.reversed()) { entry in
+                                VStack(alignment: .leading, spacing: 1) {
+                                    HStack {
+                                        Text(entry.state ?? "")
+                                        Spacer()
+                                        if let at = entry.at {
+                                            Text("\(SessionRow.duration(now.timeIntervalSince(at))) ago")
+                                                .monospacedDigit()
+                                        }
                                     }
+                                    .foregroundStyle(.tertiary)
+                                    Text(entry.detail ?? entry.text ?? "")
+                                        .foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
                                 }
-                                .foregroundStyle(.tertiary)
-                                Text(entry.detail ?? entry.text ?? "")
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(3)
-                                    .fixedSize(horizontal: false, vertical: true)
                             }
                         }
+                        .padding(.top, 2)
                     }
-                    .padding(.top, 2)
+                    .frame(maxHeight: 120)
                 } label: {
                     Text(expanded ? "Hide timeline" : "Timeline")
                         .foregroundStyle(.tertiary)
                 }
+                .font(.system(size: 9))
                 .font(.system(size: 9))
             }
         }

@@ -56,9 +56,10 @@ struct MenuContent: View {
             Divider()
             footer
         }
-        // Height is shared so the panel never jumps; width is not, because prose needs the
-        // room and readings look stretched in it.
-        .frame(width: tab == .news ? 540 : 360)
+        // One box, every tab, in both directions. News was widened while it was a list of
+        // full summaries; master and detail shows one summary at a time, so it no longer
+        // needs the room and the panel no longer resizes under the cursor.
+        .frame(width: 360)
         .onAppear {
             store.menuOpened()
             launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -182,11 +183,19 @@ struct MenuContent: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 4)
 
+            // The one place a scrollbar earns its keep: the page itself stays a fixed box,
+            // and the twelve rows this can open are bounded inside it rather than pushing
+            // everything below them off the end.
             if showDormant {
-                ForEach(dormant) { session in
-                    SessionRow(session: session, now: now)
-                        .opacity(0.65)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(dormant) { session in
+                            SessionRow(session: session, now: now)
+                                .opacity(0.65)
+                        }
+                    }
                 }
+                .frame(maxHeight: 150)
             }
         }
     }
