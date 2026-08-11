@@ -21,7 +21,8 @@ struct MenuContent: View {
 
             Picker("", selection: $tab) {
                 Text("Deck").tag(Tab.deck)
-                Text("What's new").tag(Tab.changelog)
+                Text("Changelog").tag(Tab.changelog)
+                Text("News").tag(Tab.news)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
@@ -31,9 +32,18 @@ struct MenuContent: View {
 
             Divider()
 
-            if tab == .changelog {
+            switch tab {
+            case .changelog:
                 ChangelogSection(releases: store.releases, installedVersion: store.installedVersion)
-            } else {
+            case .news:
+                NewsSection(
+                    feed: store.news,
+                    refreshing: store.newsRefreshing,
+                    error: store.newsError,
+                    worstLimit: store.usage.worst,
+                    refresh: { store.refreshNews() }
+                )
+            case .deck:
                 deck
             }
 
@@ -50,6 +60,7 @@ struct MenuContent: View {
     enum Tab: String {
         case deck
         case changelog
+        case news
     }
 
     private var deck: some View {
@@ -141,33 +152,20 @@ struct MenuContent: View {
         }
     }
 
+    /// The recent-project list with its New and Continue buttons went unused and cost more
+    /// vertical space than everything below it; a folder picker covers the same ground in
+    /// one line.
     private var launcher: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: 6) {
             Text("Launch Claude in…")
                 .font(.system(size: 11, weight: .medium))
-                .padding(.bottom, 1)
-
-            ForEach(store.recentProjects, id: \.self) { project in
-                HStack(spacing: 6) {
-                    Text((project as NSString).lastPathComponent)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer(minLength: 4)
-                    Button("New") { Launcher.launch(directory: project, resume: false) }
-                    Button("Continue") { Launcher.launch(directory: project, resume: true) }
-                }
-                .controlSize(.small)
-                .font(.system(size: 11))
-            }
-
+            Spacer(minLength: 4)
             Button("Browse folder…") {
                 guard let directory = Launcher.chooseDirectory() else { return }
                 Launcher.launch(directory: directory, resume: false)
             }
-            .buttonStyle(.plain)
+            .controlSize(.small)
             .font(.system(size: 11))
-            .foregroundStyle(.secondary)
-            .padding(.top, 1)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)

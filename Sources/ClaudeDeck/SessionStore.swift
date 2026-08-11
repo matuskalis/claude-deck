@@ -10,12 +10,14 @@ final class SessionStore {
     private(set) var hooksAreStale = false
     private(set) var notificationsBlocked = false
     private(set) var installError: String?
-    private(set) var recentProjects: [String] = []
     private(set) var stats = StatsSnapshot()
     private(set) var usage = UsageSnapshot()
     private(set) var wifi = WifiStatus()
     private(set) var jobs: [Job] = []
     private(set) var releases: [Release] = []
+    private(set) var news = NewsFeed()
+    private(set) var newsRefreshing = false
+    private(set) var newsError: String?
     /// The newest Claude Code version seen among live sessions, used to mark which release
     /// in the changelog is the one actually running.
     private(set) var installedVersion: String?
@@ -25,6 +27,7 @@ final class SessionStore {
     @ObservationIgnored private let usageReader = UsageReader()
     @ObservationIgnored private let jobsReader = JobsReader()
     @ObservationIgnored private let changelogReader = ChangelogReader()
+    @ObservationIgnored private let newsStore = NewsStore()
     @ObservationIgnored private let history = HistoryTail()
     @ObservationIgnored private let spool = EventsSpool()
     @ObservationIgnored private let toolSpool = ToolSpool()
@@ -140,10 +143,47 @@ final class SessionStore {
             let releases = await changelogReader.releases()
             await self.apply(releases: releases)
         }
+        loadNews()
     }
 
     private func apply(releases: [Release]) {
         self.releases = releases
+    }
+
+    // MARK: - News
+
+    private func loadNews() {
+        Task.detached(priority: .utility) { [newsStore] in
+            let feed = await newsStore.load()
+            await self.apply(news: feed)
+        }
+    }
+
+    private func apply(news: NewsFeed) {
+        self.news = news
+    }
+
+    /// Only ever called from the button. This is the one thing the app does that costs
+    /// money, and it is not going to do it on a timer.
+    func refreshNews() {
+        guard !newsRefreshing else { return }
+        newsRefreshing = true
+        newsError = nil
+
+        Task.detached(priority: .utility) { [newsStore] in
+            do {
+                let feed = try await newsStore.refresh(generatedAt: Date())
+                await self.finishNews(feed: feed, error: nil)
+            } catch {
+                await self.finishNews(feed: nil, error: error.localizedDescription)
+            }
+        }
+    }
+
+    private func finishNews(feed: NewsFeed?, error: String?) {
+        newsRefreshing = false
+        newsError = error
+        if let feed { news = feed }
     }
 
     // MARK: - Plan limits and Wi-Fi
@@ -267,7 +307,6 @@ final class SessionStore {
         Task.detached(priority: .utility) { [history] in
             let scan = Self.scanSessions()
             let prompts = await history.latestPrompts()
-            let projects = await history.recentProjects(limit: 8)
             let oneMillion = TranscriptTail.oneMillionConfigured()
             let installed = HookInstaller.isInstalled
             let stale = HookInstaller.hasStaleCommands
@@ -276,7 +315,6 @@ final class SessionStore {
                 runningJobIds: scan.runningJobIds,
                 startedToday: scan.startedToday,
                 prompts: prompts,
-                projects: projects,
                 oneMillion: oneMillion,
                 hooksInstalled: installed,
                 hooksAreStale: stale
@@ -319,7 +357,6 @@ final class SessionStore {
         runningJobIds: Set<String>,
         startedToday: Set<String>,
         prompts: [String: String],
-        projects: [String],
         oneMillion: Bool,
         hooksInstalled: Bool,
         hooksAreStale: Bool
@@ -337,7 +374,6 @@ final class SessionStore {
             self.runningJobIds = runningJobIds
             for index in jobs.indices { jobs[index].running = runningJobIds.contains(jobs[index].id) }
         }
-        recentProjects = projects
         // The refresh at launch runs alongside the first session scan, so today's count
         // is only complete once that scan has landed.
         if !statsPrimed {

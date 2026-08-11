@@ -79,6 +79,33 @@ you build it locally the bundle carries no quarantine attribute, so Gatekeeper d
 stand in the way — `make install` and open it. It is ad-hoc signed, which is enough for
 local use and not enough to distribute, which is fine, because it is not distributed.
 
+## News
+
+The one place the app reaches past the disk — and it does so **without ever holding a
+credential**, by asking the Claude Code already installed and logged in on this machine.
+Refresh runs a separate headless `claude -p` session that reads the vendors' own release
+notes and blogs, and caches what it finds.
+
+Two controls, which is the whole interface: **Plain / Technical**, and **24h / 7d / 30d /
+90d**. Both summaries are written in the same run and stored per item, so switching between
+them is free — the model is asked once and answers twice, rather than being asked again.
+
+Four things stated plainly, because they are the cost of the feature:
+
+- **It spends your plan usage.** A measured run: 20 turns, 143 seconds, **$0.88**. The
+  panel prints what the last one cost, and refresh is a button — never a timer, never on
+  launch.
+- **It refuses when a limit is already critical.** The rest of this app exists to show how
+  close those limits are; a news panel is not what the last of a weekly allowance is for.
+- **It does not speak into any session of yours.** A fresh `claude -p` is its own
+  conversation. The boundary below still holds.
+- **The summaries are a model's reading of pages it fetched**, not a publisher's feed.
+  Every item carries its primary-source URL; click through for anything that matters.
+
+Items are required to carry a working URL and a publication date, and the prompt says to
+drop anything that cannot supply both. Sources are restricted to vendor blogs, changelogs,
+model cards and papers — no aggregators.
+
 ## What's new
 
 A second tab reads the changelog Claude Code already keeps at
@@ -187,9 +214,9 @@ instead. Focus goes through the same Automation consent as quick launch.
 
 ## Quick launch
 
-The launcher lists the last eight project directories from `~/.claude/history.jsonl`,
-plus a folder picker. **New** runs `claude`, **Continue** runs `claude -c`, which resumes
-the most recent conversation in that directory.
+A folder picker, and that is deliberately all of it. There was a recent-projects list with
+New and Continue buttons per row; it went unused and cost more vertical space than every
+section below it.
 
 The window is opened by driving iTerm through `osascript`, falling back to Terminal.app
 when `/Applications/iTerm.app` is not present. The first launch triggers the macOS
@@ -418,7 +445,8 @@ running will not emit events until they are restarted.
 ## What it reads
 
 Everything except `~/.claude/settings.json` (hook install) and `~/.claude/claude-deck/`
-(its own spools, samples and helper) is read-only.
+(its own spools, samples, helper and news cache) is read-only. The app itself opens no
+network connection; the News tab shells out to the `claude` you already have, which does.
 
 "Read-only" is not quite the promise worth making, though, because the app does install
 itself and can end a dormant process. The line that actually matters is this one:

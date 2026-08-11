@@ -120,15 +120,8 @@ actor HistoryTail {
 
     private var offset = 0
     private var prompts: [String: String] = [:]
-    /// Project directories in order of last use, oldest first.
-    private var projects: [String] = []
     private var promptedDay = ""
     private var promptedToday: Set<String> = []
-
-    /// The most recently used project directories, most recent first.
-    func recentProjects(limit: Int) -> [String] {
-        projects.suffix(limit).reversed()
-    }
 
     /// Sessions that submitted a prompt today, empty if none has.
     func sessionsPromptedToday() -> Set<String> {
@@ -140,7 +133,6 @@ actor HistoryTail {
         if offset > size {
             offset = 0
             prompts = [:]
-            projects = []
         }
         guard size > offset, let handle = try? FileHandle(forReadingFrom: Self.url) else { return prompts }
         defer { try? handle.close() }
@@ -154,10 +146,6 @@ actor HistoryTail {
         for line in data[data.startIndex...lastNewline].split(separator: UInt8(ascii: "\n")) {
             guard let entry = try? decoder.decode(HistoryLine.self, from: Data(line)) else { continue }
 
-            if let project = entry.project {
-                projects.removeAll { $0 == project }
-                projects.append(project)
-            }
             guard let sessionId = entry.sessionId else { continue }
             if let display = entry.display {
                 prompts[sessionId] = display
@@ -186,6 +174,5 @@ actor HistoryTail {
 private struct HistoryLine: Decodable {
     var display: String?
     var sessionId: String?
-    var project: String?
     var timestamp: Double?
 }
