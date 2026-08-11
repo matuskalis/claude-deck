@@ -47,6 +47,7 @@ final class SessionStore {
     @ObservationIgnored private var announcedThresholds: Set<String> = []
     /// Job ids whose processes are alive, from the background session files.
     @ObservationIgnored private var runningJobIds: Set<String> = []
+    @ObservationIgnored private var backgroundProcesses: [(pid: Int32, name: String)] = []
     /// The last `needs` each job was announced for, so a new question alerts again but the
     /// same one does not.
     @ObservationIgnored private var announcedNeeds: [String: String] = [:]
@@ -191,7 +192,7 @@ final class SessionStore {
     // MARK: - Plan limits and Wi-Fi
 
     private func refreshMeters() {
-        let running = sessions.map { (pid: $0.pid, name: $0.name) }
+        let running = sessions.map { (pid: $0.pid, name: $0.name) } + backgroundProcesses
         Task.detached(priority: .utility) { [usageReader, jobsReader, activityReader] in
             let usage = await usageReader.snapshot()
             let wifi = WifiStatus.read()
@@ -317,6 +318,7 @@ final class SessionStore {
             let stale = HookInstaller.hasStaleCommands
             await self.apply(
                 scan: scan.live,
+                background: scan.background,
                 runningJobIds: scan.runningJobIds,
                 startedToday: scan.startedToday,
                 prompts: prompts,
@@ -330,7 +332,7 @@ final class SessionStore {
     /// Background sessions are scanned too, but they are not listed as sessions: they have
     /// no terminal to go back to, and their job directory says far more about them than
     /// their session file does. All they contribute here is which jobs are still running.
-    private nonisolated static func scanSessions() -> (live: [SessionFile], runningJobIds: Set<String>, startedToday: Set<String>) {
+    private nonisolated static func scanSessions() -> (live: [SessionFile], background: [SessionFile], runningJobIds: Set<String>, startedToday: Set<String>) {
         let directory = URL(fileURLWithPath: NSHomeDirectory()).appending(path: ".claude/sessions")
         let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
         let decoder = JSONDecoder()
@@ -350,15 +352,18 @@ final class SessionStore {
 
         let alive = ProcessCheck.alive(candidates.map { (pid: $0.pid ?? 0, procStart: $0.procStart) })
         let live = candidates.filter { alive.contains($0.pid ?? 0) }
+        let background = live.filter { $0.kind == "bg" }
         return (
             live.filter { $0.kind != "bg" },
-            Set(live.filter { $0.kind == "bg" }.compactMap(\.jobId)),
+            background,
+            Set(background.compactMap(\.jobId)),
             startedToday
         )
     }
 
     private func apply(
         scan: [SessionFile],
+        background: [SessionFile],
         runningJobIds: Set<String>,
         startedToday: Set<String>,
         prompts: [String: String],
@@ -371,6 +376,12 @@ final class SessionStore {
         self.hooksInstalled = hooksInstalled
         self.hooksAreStale = hooksAreStale
         sessionIdsStartedToday = startedToday
+        // A background job is still a process on this machine, and usually the hungriest
+        // one, so the machine row counts it even though it is not listed as a session.
+        backgroundProcesses = background.compactMap { file in
+            guard let pid = file.pid else { return nil }
+            return (pid: pid, name: file.name ?? "background job")
+        }
         // Numeric compare, or 2.1.9 sorts above 2.1.10.
         installedVersion = scan.compactMap(\.version).max {
             $0.compare($1, options: .numeric) == .orderedAscending

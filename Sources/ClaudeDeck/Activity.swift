@@ -23,12 +23,12 @@ struct ActivitySnapshot: Sendable, Equatable {
     }
 }
 
-/// Samples CPU, memory and disk for the running sessions.
+/// Samples CPU, memory and disk for the running sessions, from `proc_pid_rusage`.
 ///
-/// **`ps -o %cpu` is not usable here.** It reports CPU averaged over the whole life of the
-/// process, so a session that has been open for a fortnight reads 0.1% while it is pinning
-/// a core. Real CPU comes from the cumulative CPU time in `ps -o time`, differenced against
-/// the previous sample — which is why this has to hold state between calls.
+/// **Averaged CPU is not usable here.** `ps -o %cpu` reports CPU over the whole life of the
+/// process, so a session open for a fortnight reads 0.1% while it is pinning a core. Real
+/// CPU comes from differencing cumulative CPU time against the previous sample — which is
+/// why this has to hold state between calls.
 ///
 /// Energy and per-process network are deliberately absent: `top -stats power` costs about
 /// 1.5 seconds per sample and reports 0.0 without a sampling window, and `nettop` costs 5
@@ -112,39 +112,40 @@ actor ActivityReader {
         return Int(values?.volumeAvailableCapacityForImportantUsage ?? 0)
     }
 
+    /// One syscall per process, and the same numbers Activity Monitor shows.
+    ///
+    /// **Memory is `phys_footprint`, not RSS.** Activity Monitor's Memory column is the
+    /// footprint, and the two are nowhere near each other — measured here, three sessions
+    /// reading 182, 156 and 220 MB resident had footprints of 302, 360 and 523 MB. Reporting
+    /// RSS meant reporting roughly half.
     private static func measure(pids: [Int32]) -> [Int32: (cpuSeconds: Double, residentBytes: Int)] {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/ps")
-        process.arguments = ["-o", "pid=,rss=,time=", "-p", pids.map(String.init).joined(separator: ",")]
-        process.environment = ["PATH": "/bin:/usr/bin"]
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        guard (try? process.run()) != nil else { return [:] }
-
-        let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        process.waitUntilExit()
-
         var found: [Int32: (cpuSeconds: Double, residentBytes: Int)] = [:]
-        for line in text.split(separator: "\n") {
-            let fields = line.split(separator: " ", omittingEmptySubsequences: true)
-            guard fields.count == 3, let pid = Int32(fields[0]), let kilobytes = Int(fields[1]) else { continue }
-            found[pid] = (Self.seconds(String(fields[2])), kilobytes * 1024)
+        for pid in pids {
+            var info = rusage_info_v4()
+            let ok = withUnsafeMutablePointer(to: &info) {
+                $0.withMemoryRebound(to: Optional<rusage_info_t>.self, capacity: 1) {
+                    proc_pid_rusage(pid, RUSAGE_INFO_V4, $0)
+                }
+            }
+            guard ok == 0 else { continue }
+            found[pid] = (
+                cpuSeconds: Self.seconds(machTicks: info.ri_user_time + info.ri_system_time),
+                residentBytes: Int(info.ri_phys_footprint)
+            )
         }
         return found
     }
 
-    /// `ps` prints cumulative CPU as `mm:ss.ss`, growing to `hh:mm:ss` and `dd-hh:mm:ss`.
-    static func seconds(_ text: String) -> Double {
-        var rest = text
-        var total = 0.0
-        if let dash = rest.firstIndex(of: "-") {
-            total += (Double(rest[..<dash]) ?? 0) * 86_400
-            rest = String(rest[rest.index(after: dash)...])
-        }
-        for part in rest.split(separator: ":") {
-            total = total * 60 + (Double(part) ?? 0)
-        }
-        return total
+    /// `ri_user_time` and `ri_system_time` are mach ticks, **not** nanoseconds, whatever the
+    /// names suggest. On this machine the timebase is 125/3, so dividing by a billion
+    /// under-reports CPU by a factor of forty-two: 51.7 seconds where `ps` says 2152.6.
+    private static let timebase: Double = {
+        var info = mach_timebase_info_data_t()
+        mach_timebase_info(&info)
+        return Double(info.numer) / Double(info.denom)
+    }()
+
+    static func seconds(machTicks: UInt64) -> Double {
+        Double(machTicks) * timebase / 1_000_000_000
     }
 }

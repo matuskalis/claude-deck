@@ -359,11 +359,25 @@ What the sessions cost the machine, as opposed to what they cost the plan: CPU, 
 memory, the size of `~/.claude`, and free disk. The busiest session is named when it is
 doing anything worth naming.
 
-**`ps -o %cpu` is not usable for this.** It reports CPU averaged over the entire life of the
-process, so a session open for a fortnight reads 0.1% while it is pinning a core. CPU comes
-instead from the cumulative CPU time in `ps -o time`, differenced against the previous
-sample — which is the whole reason the reader holds state between calls, and why the first
-reading after opening the menu is blank.
+Everything comes from `proc_pid_rusage` — one syscall per process, no subprocess at all,
+and the same source Activity Monitor reads. Three things had to be right for the numbers to
+agree with it, and none of them were obvious:
+
+**Memory is `phys_footprint`, not RSS.** Activity Monitor's Memory column is the footprint,
+and the two are nowhere near each other: measured here, sessions reading 182, 156 and 220 MB
+resident had footprints of 302, 360 and 523 MB. Reporting RSS meant reporting roughly half —
+1.69 GB where Activity Monitor said 3.78.
+
+**`ri_user_time` is in mach ticks, not nanoseconds**, whatever the name suggests. The
+timebase on this machine is 125/3, so dividing by a billion under-reports CPU by a factor of
+forty-two: 51.7 seconds where `ps` says 2152.6.
+
+**Averaged CPU is useless here.** `ps -o %cpu` covers the whole life of the process, so a
+session open for a fortnight reads 0.1% while pinning a core. CPU is differenced between
+samples instead, which is why the reader holds state and the first reading is blank.
+
+Background jobs are counted too. They are not listed as sessions — they have no window — but
+they are processes on this machine, and usually the hungriest ones.
 
 CPU is measured against **one** core, not all of them, because that is the ceiling a single
 session's main thread can hit. `~/.claude` is measured with `du` at most every five minutes;
