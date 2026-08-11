@@ -379,6 +379,20 @@ samples instead, which is why the reader holds state and the first reading is bl
 Background jobs are counted too. They are not listed as sessions — they have no window — but
 they are processes on this machine, and usually the hungriest ones.
 
+Checked against the system rather than assumed. Across twelve live sessions:
+
+| | Deck | Independent source |
+|---|---|---|
+| Memory | 3871 MB | 3871 MB — `vmmap` Physical footprint |
+| CPU | 18.6% | 20.0% — `ps` cumulative-time delta over 5 s |
+
+Memory is byte-identical. CPU differs by design: the two cover overlapping rather than
+identical windows, and `ps` rounds cumulative time to hundredths. With the naive
+nanoseconds conversion that number would have read 0.4%.
+
+Activity Monitor's own total will still read higher, correctly: it lists the shells, `rg`
+and build tools sessions spawn as separate rows, and this counts only `claude` itself.
+
 CPU is measured against **one** core, not all of them, because that is the ceiling a single
 session's main thread can hit. `~/.claude` is measured with `du` at most every five minutes;
 it is around a gigabyte of transcripts on a well-used machine and grows without anyone
