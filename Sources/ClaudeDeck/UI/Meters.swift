@@ -142,31 +142,97 @@ struct Sparkline: View {
 }
 
 /// A labelled slider sized for a menu bar panel: what it controls on the left, where it
-/// currently sits on the right, ticks underneath.
+/// currently sits on the right.
 ///
-/// Stepped rather than continuous wherever the underlying thing is a set of named states,
-/// so the handle lands on a stop instead of between two of them.
+/// Hand-built rather than a `Slider`, because a stock one is drawn in the system accent
+/// colour and this panel already has a palette of its own. The track is the same capsule
+/// and the same gradient as `MeterBar`, so a filled slider and a filled meter read as the
+/// same kind of object.
 struct StopSlider: View {
     let title: String
     @Binding var value: Double
     let range: ClosedRange<Double>
     var step: Double = 1
     let caption: String
+    var severity: Severity = .normal
+
+    private static let knob: CGFloat = 12
+    private static let track: CGFloat = 5
+
+    @State private var dragging = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 Text(title)
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 4)
+                // Deliberately not the accent colour: elsewhere in this menu a green
+                // reading means "healthy", and "30 days" is not a health reading.
                 Text(caption)
-                    .font(.system(size: 10))
+                    .font(.system(size: 10, weight: .medium))
                     .monospacedDigit()
             }
-            Slider(value: $value, in: range, step: step)
-                .controlSize(.mini)
+
+            GeometryReader { geometry in
+                let travel = max(1, geometry.size.width - Self.knob)
+                let offset = travel * fraction
+
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.primary.opacity(0.09))
+                        .frame(height: Self.track)
+
+                    Capsule()
+                        .fill(severity.gradient)
+                        .frame(width: offset + Self.knob / 2, height: Self.track)
+
+                    // Only where the stops are countable: ninety of them would be noise.
+                    if stops > 1, stops <= 12 {
+                        ForEach(0..<stops, id: \.self) { stop in
+                            Circle()
+                                .fill(Color.primary.opacity(0.22))
+                                .frame(width: 2.5, height: 2.5)
+                                .offset(x: Self.knob / 2 - 1.25 + travel * (Double(stop) / Double(stops - 1)))
+                        }
+                    }
+
+                    Circle()
+                        .fill(Color(nsColor: .controlBackgroundColor))
+                        .overlay(Circle().strokeBorder(severity.color, lineWidth: 2.5))
+                        .frame(width: Self.knob, height: Self.knob)
+                        .shadow(color: .black.opacity(0.22), radius: dragging ? 2.5 : 1, y: 0.5)
+                        .scaleEffect(dragging ? 1.15 : 1)
+                        .offset(x: offset)
+                }
+                .frame(height: Self.knob)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { gesture in
+                            dragging = true
+                            set(from: gesture.location.x, travel: travel)
+                        }
+                        .onEnded { _ in dragging = false }
+                )
+                .animation(.easeOut(duration: 0.12), value: dragging)
+            }
+            .frame(height: Self.knob)
         }
+    }
+
+    private var span: Double { max(0.0001, range.upperBound - range.lowerBound) }
+    private var fraction: Double { min(1, max(0, (value - range.lowerBound) / span)) }
+    private var stops: Int { step > 0 ? Int((span / step).rounded()) + 1 : 0 }
+
+    /// The pointer addresses the centre of the knob, so half of it comes off the front of
+    /// the travel before the position is read.
+    private func set(from x: CGFloat, travel: CGFloat) {
+        let ratio = min(1, max(0, (x - Self.knob / 2) / travel))
+        let raw = range.lowerBound + Double(ratio) * span
+        let snapped = step > 0 ? (raw / step).rounded() * step : raw
+        value = min(range.upperBound, max(range.lowerBound, snapped))
     }
 }
 
