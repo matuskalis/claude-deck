@@ -65,27 +65,30 @@ struct MenuContent: View {
         case news
     }
 
+    /// The whole tab scrolls, not just the session list. With sessions, jobs, limits, the
+    /// machine row and stats stacked, the column is taller than the panel a menu bar item is
+    /// given, and anything past the fold was simply unreachable.
     private var deck: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                VStack(alignment: .leading, spacing: 0) {
-                    if store.sessions.isEmpty {
-                        Text("No active sessions")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
-                    } else {
-                        if store.sessions.count > 6 {
-                            TextField("Filter", text: $search)
-                                .textFieldStyle(.roundedBorder)
-                                .controlSize(.small)
-                                .font(.system(size: 11))
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    VStack(alignment: .leading, spacing: 0) {
+                        if store.sessions.isEmpty {
+                            Text("No active sessions")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
                                 .padding(.horizontal, 12)
-                                .padding(.top, 6)
-                        }
+                                .padding(.vertical, 10)
+                        } else {
+                            if store.sessions.count > 6 {
+                                TextField("Filter", text: $search)
+                                    .textFieldStyle(.roundedBorder)
+                                    .controlSize(.small)
+                                    .font(.system(size: 11))
+                                    .padding(.horizontal, 12)
+                                    .padding(.top, 6)
+                            }
 
-                        ScrollView {
                             VStack(alignment: .leading, spacing: 0) {
                                 ForEach(filtered.filter { !$0.isDormant(now: context.date) }) { session in
                                     SessionRow(session: session, now: context.date)
@@ -98,26 +101,26 @@ struct MenuContent: View {
                             }
                             .padding(.vertical, 3)
                         }
-                        .frame(maxHeight: 340)
-                    }
 
-                    if !store.jobs.isEmpty {
+                        if !store.jobs.isEmpty {
+                            Divider()
+                            JobsSection(jobs: store.jobs, now: context.date)
+                        }
+
                         Divider()
-                        JobsSection(jobs: store.jobs, now: context.date)
+                        UsageSection(usage: store.usage, wifi: store.wifi, now: context.date)
+                        Divider()
+                        ActivitySection(activity: store.activity)
                     }
-
-                    Divider()
-                    UsageSection(usage: store.usage, wifi: store.wifi, now: context.date)
-                    Divider()
-                    ActivitySection(activity: store.activity)
                 }
-            }
 
-            Divider()
-            StatsSection(stats: store.stats)
-            Divider()
-            launcher
+                Divider()
+                StatsSection(stats: store.stats)
+                Divider()
+                launcher
+            }
         }
+        .frame(maxHeight: 560)
     }
 
     /// Terminal tabs left open days ago are most of the list on a normal machine, and they
