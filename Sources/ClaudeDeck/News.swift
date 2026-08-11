@@ -59,21 +59,77 @@ struct NewsFeed: Codable, Sendable, Equatable {
 actor NewsStore {
     static var url: URL { EventsSpool.directory.appending(path: "news.json") }
 
-    private static let candidates = [
+    /// Where `claude` ends up, in rough order of how many people land there: the native
+    /// installer, the older local install, the two Homebrew prefixes, then the npm-adjacent
+    /// package managers.
+    private static let relativeCandidates = [
         ".local/bin/claude",
         ".claude/local/claude",
+        ".npm-global/bin/claude",
+        ".npm-packages/bin/claude",
+        ".bun/bin/claude",
+        ".volta/bin/claude",
+        ".yarn/bin/claude",
+        "node_modules/.bin/claude",
     ]
-    private static let systemCandidates = [
+    private static let absoluteCandidates = [
         "/opt/homebrew/bin/claude",
         "/usr/local/bin/claude",
     ]
+    /// Version managers install per node version, so the directory in the middle is only
+    /// known by looking.
+    private static let versionedRoots = [
+        ".nvm/versions/node",
+        ".local/share/fnm/node-versions",
+        ".local/state/fnm_multishells",
+        "Library/Application Support/fnm/node-versions",
+    ]
 
-    /// A GUI app inherits no useful PATH, so the binary is found by looking rather than by
-    /// asking the shell.
+    /// A GUI app inherits no useful PATH, so the binary is found by looking.
+    ///
+    /// Asking a login shell was tried first and is not dependable: on the machine this was
+    /// written on, `zsh -lc 'command -v claude'` fails, because the PATH entry that finds it
+    /// is only added for interactive shells. It stays as a last resort for the installs
+    /// none of the fixed paths below cover.
     static func executable() -> URL? {
         let home = URL(fileURLWithPath: NSHomeDirectory())
-        let paths = candidates.map { home.appending(path: $0).path } + systemCandidates
-        return paths.first { FileManager.default.isExecutableFile(atPath: $0) }.map { URL(fileURLWithPath: $0) }
+        var paths = relativeCandidates.map { home.appending(path: $0).path }
+        paths += absoluteCandidates
+
+        for root in versionedRoots {
+            let directory = home.appending(path: root)
+            let versions = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+            for version in versions {
+                paths.append(version.appending(path: "bin/claude").path)
+                paths.append(version.appending(path: "installation/bin/claude").path)
+            }
+        }
+
+        if let found = paths.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
+            return URL(fileURLWithPath: found)
+        }
+        return fromLoginShell()
+    }
+
+    private static func fromLoginShell() -> URL? {
+        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        guard FileManager.default.isExecutableFile(atPath: shell) else { return nil }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: shell)
+        process.arguments = ["-lc", "command -v claude"]
+        process.environment = ["HOME": NSHomeDirectory(), "PATH": "/usr/bin:/bin"]
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        guard (try? process.run()) != nil else { return nil }
+
+        let path = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        process.waitUntilExit()
+
+        guard !path.isEmpty, FileManager.default.isExecutableFile(atPath: path) else { return nil }
+        return URL(fileURLWithPath: path)
     }
 
     private static let prompt = """
@@ -123,17 +179,32 @@ actor NewsStore {
     func refresh(generatedAt: Date) throws -> NewsFeed {
         guard let executable = Self.executable() else { throw RefreshError.noClaude }
 
+        do {
+            // Sonnet by preference: this is summarising pages, and it is the user's plan
+            // being spent.
+            return try run(executable: executable, model: "claude-sonnet-5", generatedAt: generatedAt)
+        } catch {
+            // Not every account can reach every model, and model ids outlive releases
+            // badly. A rejected model fails immediately and costs nothing, so falling back
+            // to whatever the user has configured is worth one retry.
+            guard let retried = try? run(executable: executable, model: nil, generatedAt: generatedAt) else {
+                throw error
+            }
+            return retried
+        }
+    }
+
+    private func run(executable: URL, model: String?, generatedAt: Date) throws -> NewsFeed {
         let process = Process()
         process.executableURL = executable
         process.arguments = [
             "-p", Self.prompt,
             "--output-format", "json",
-            "--model", "claude-sonnet-5",
             "--allowed-tools", "WebSearch", "WebFetch",
             // A measured run takes 20 turns and about 90 cents. The cap is a backstop
             // against a search loop quietly spending a great deal more than that.
             "--max-turns", "30",
-        ]
+        ] + (model.map { ["--model", $0] } ?? [])
         // A GUI app's environment is nearly empty, and the CLI needs at least these.
         process.environment = [
             "HOME": NSHomeDirectory(),

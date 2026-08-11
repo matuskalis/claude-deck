@@ -79,7 +79,7 @@ struct NewsSection: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
         }
-        .frame(maxHeight: 380)
+        .frame(maxHeight: 570)
 
         Divider()
         footer

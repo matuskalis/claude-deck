@@ -50,7 +50,9 @@ struct MenuContent: View {
             Divider()
             footer
         }
-        .frame(width: 360)
+        // News is the one tab with prose in it rather than readings, and prose needs the
+        // room. The panel widens for it and goes back afterwards.
+        .frame(width: tab == .news ? 540 : 360)
         .onAppear {
             store.menuOpened()
             launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -106,6 +108,8 @@ struct MenuContent: View {
 
                     Divider()
                     UsageSection(usage: store.usage, wifi: store.wifi, now: context.date)
+                    Divider()
+                    ActivitySection(activity: store.activity)
                 }
             }
 

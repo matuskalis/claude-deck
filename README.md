@@ -22,7 +22,7 @@ Three tabs:
 
 ```
 ┌────────────────────────────────────────────┐
-│ Claude Deck v1.7.1  1 waiting 1 blocked 2 ▮│
+│ Claude Deck v1.8.0  1 waiting 1 blocked 2 ▮│
 │    ( Deck )  Changelog   News              │
 │────────────────────────────────────────────│
 │ ◐ shiftfix   opus    waiting: Bash approval│
@@ -48,6 +48,10 @@ Three tabs:
 │ Weekly · Fable                         27% │
 │ ▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
 │ as of 21:30, refreshed by Claude Code      │
+│────────────────────────────────────────────│
+│ Machine        fix-shorts-water… busiest    │
+│ CPU    Memory   ~/.claude   Free            │
+│ 38%    1.4 GB   1.2 GB      589 GB          │
 │────────────────────────────────────────────│
 │ Today 6 sessions · 1.2M tok · ~$4.10 · $0.9│
 │ Lifetime 239 sessions · 6.8B  Jul 20+live  │
@@ -318,6 +322,28 @@ is hidden on a machine with no Wi-Fi hardware.
 It earns its place next to the plan limits because it is the other reason a long agent run
 stops mid-tool-call, and the one you cannot see from inside Claude Code.
 
+## Machine
+
+What the sessions cost the machine, as opposed to what they cost the plan: CPU, resident
+memory, the size of `~/.claude`, and free disk. The busiest session is named when it is
+doing anything worth naming.
+
+**`ps -o %cpu` is not usable for this.** It reports CPU averaged over the entire life of the
+process, so a session open for a fortnight reads 0.1% while it is pinning a core. CPU comes
+instead from the cumulative CPU time in `ps -o time`, differenced against the previous
+sample — which is the whole reason the reader holds state between calls, and why the first
+reading after opening the menu is blank.
+
+CPU is measured against **one** core, not all of them, because that is the ceiling a single
+session's main thread can hit. `~/.claude` is measured with `du` at most every five minutes;
+it is around a gigabyte of transcripts on a well-used machine and grows without anyone
+deciding that it should.
+
+**Energy and network are deliberately absent.** Both were tried and both were measured:
+`top -stats power` costs about 1.5 seconds per sample and reports `0.0` without a sampling
+window, and `nettop` costs 5 seconds and returns nothing useful without privileges this app
+has no business holding. A slow, fake-precise number is worse than no number.
+
 ## Stats
 
 Two sources, with different freshness, both labelled in the menu:
@@ -511,6 +537,7 @@ allow it; it is deliberately untouched.
 | `~/.claude/claude-deck/usage-history.jsonl` | plan limit samples for the forecast (written) |
 | `~/.claude/claude-deck/prices.json` | token prices for the cost estimate (written with defaults, then yours) |
 | `~/.claude/cache/changelog.md` | the Changelog tab, parsed when the menu opens |
+| `~/.claude` (size only) | the Machine row, via `du`, at most every five minutes |
 | `~/.claude/claude-deck/news.json` | the News tab's cache (written) |
 | `~/.claude.json` | `cachedUsageUtilization` only: plan limit percentages, severities and reset times |
 

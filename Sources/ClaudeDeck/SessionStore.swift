@@ -15,6 +15,7 @@ final class SessionStore {
     private(set) var wifi = WifiStatus()
     private(set) var jobs: [Job] = []
     private(set) var releases: [Release] = []
+    private(set) var activity = ActivitySnapshot()
     private(set) var news = NewsFeed()
     private(set) var newsRefreshing = false
     private(set) var newsError: String?
@@ -28,6 +29,7 @@ final class SessionStore {
     @ObservationIgnored private let jobsReader = JobsReader()
     @ObservationIgnored private let changelogReader = ChangelogReader()
     @ObservationIgnored private let newsStore = NewsStore()
+    @ObservationIgnored private let activityReader = ActivityReader()
     @ObservationIgnored private let history = HistoryTail()
     @ObservationIgnored private let spool = EventsSpool()
     @ObservationIgnored private let toolSpool = ToolSpool()
@@ -189,15 +191,18 @@ final class SessionStore {
     // MARK: - Plan limits and Wi-Fi
 
     private func refreshMeters() {
-        Task.detached(priority: .utility) { [usageReader, jobsReader] in
+        let running = sessions.map { (pid: $0.pid, name: $0.name) }
+        Task.detached(priority: .utility) { [usageReader, jobsReader, activityReader] in
             let usage = await usageReader.snapshot()
             let wifi = WifiStatus.read()
             let jobs = await jobsReader.snapshot()
-            await self.apply(usage: usage, wifi: wifi, jobs: jobs)
+            let activity = await activityReader.sample(sessions: running)
+            await self.apply(usage: usage, wifi: wifi, jobs: jobs, activity: activity)
         }
     }
 
-    private func apply(usage: UsageSnapshot, wifi: WifiStatus, jobs incoming: [Job]) {
+    private func apply(usage: UsageSnapshot, wifi: WifiStatus, jobs incoming: [Job], activity: ActivitySnapshot) {
+        self.activity = activity
         jobs = incoming.map { job in
             var job = job
             job.running = runningJobIds.contains(job.id)
