@@ -63,6 +63,7 @@ make build     # swift build -c release, then assemble dist/Claude Deck.app
 make run       # build + open "dist/Claude Deck.app"
 make install   # build + ditto to ~/Applications/Claude Deck.app
 make clean
+swift test     # hook install/uninstall splicing, and what may be terminated
 ```
 
 Always launch the app bundle, never `.build/release/ClaudeDeck` directly:
@@ -94,6 +95,21 @@ after a confirmation listing them. Each one gets to write out its transcript and
 session file, so the conversation is still there under `claude -c` in the same directory.
 Busy sessions, sessions waiting on a permission prompt, and background jobs are never
 included, whatever the list is filtered to.
+
+Two things make that safe to click:
+
+**Dormant requires `status` to say `idle`**, not merely to not say `busy`. A session file
+with no status, or one written by a future version using a status this build has never
+heard of, decodes as not-busy — and "I do not recognise this state" must not become "safe
+to terminate". One session on the machine this was written on is exactly that case: no
+status field, idle for a fortnight, and previously in the Quit all set.
+
+**A pid is not an identity.** The list backing that button was read up to a refresh
+interval earlier, and in that gap a session can exit and have its pid handed to something
+unrelated. Every process is re-proven against its recorded `procStart` at the moment of
+quitting, by the same check the session scan uses. Anything that cannot be proven — already
+gone, or a session file with no recorded start time — is skipped and reported, never
+signalled on the strength of a number.
 
 ## The menu bar item
 
@@ -185,12 +201,34 @@ Job directories outlive the processes that wrote them, so liveness comes from jo
 process behind it shows as **not running** rather than being hidden, since that is the
 failure worth seeing. Finished jobs, and anything untouched for a day, are dropped.
 
-## Tool activity
+## What it records
 
-`PreToolUse` and `PostToolUse` hooks turn `busy 4m12s` into `Bash 4m12s`. Their payload
-carries the entire `tool_input`, which on a `Write` is a whole file, so they get a spool of
-their own written by `~/.claude/claude-deck/spool`, a helper that appends one line and
-rotates the file with `tail -c` past a megabyte.
+Hook payloads carry everything: your prompt, the full `tool_input` — which on a `Write` is
+a whole file — and the tool result. Spooling that raw would put a second copy of your
+source and your secrets on disk, in the clear, for a menu bar app.
+
+So every hook goes through `~/.claude/claude-deck/spool`, which keeps only:
+
+| Kept | Why |
+|---|---|
+| `session_id` | to attribute the event to a row |
+| `tool_name` | the label on the row |
+| `message`, on `Notification` and `StopFailure` only | the text the row and the banner show, written by Claude Code — "Claude needs your permission to run Bash" |
+
+**Your prompts, tool inputs and tool results are read and thrown away.** A test pushes a
+payload containing an API token and a private path through the real helper and asserts that
+neither appears in what it wrote.
+
+Fields come out with `plutil` rather than a regular expression: `tool_input` is arbitrary
+JSON and any pattern over it eventually matches the wrong thing. `session_id` and
+`tool_name` are a UUID and an identifier, so neither can carry a quote and both go in as
+they are; if that ever stops being true the line fails to parse and is dropped on read,
+which fails safe. The one free-text field is flattened, stripped of control characters,
+capped at 200 characters and escaped.
+
+Spools are written under `umask 077` into a `0700` directory, capped at 256 KB and trimmed
+to 64 KB. **Clear data** in the menu deletes them and the usage samples; **Remove** takes
+the hooks out entirely.
 
 **The helper has no `set -e` and always exits 0.** A `PreToolUse` hook that exits non-zero
 blocks the tool call it fired for, and nothing a menu bar app wants is worth stopping
@@ -331,11 +369,17 @@ entries into `~/.claude/settings.json`:
 | `UserPromptSubmit`, `SessionEnd` | clearing the above |
 | `PreToolUse`, `PostToolUse` | the tool a session is inside |
 
-The first five append the hook's stdin to `~/.claude/claude-deck/events.jsonl`. The two tool
-hooks go through the spool helper instead, for the reasons in [Tool activity](#tool-activity).
+All seven go through `~/.claude/claude-deck/spool`, which records only the fields listed in
+[What it records](#what-it-records).
 
-Adding hook names to a release means an existing install reports **Hooks not installed**
-until Reinstall is pressed; that is the intended path, not a bug.
+Before writing, the installer copies `settings.json` to
+`settings.json.bak-claude-deck-<timestamp>`, and **Remove** puts it back: uninstalling
+after installing leaves the file byte-identical to what it was, which is what the test
+asserts. Hooks you wrote yourself are never touched by either direction.
+
+Reinstall removes before installing, so upgrading replaces the old hooks rather than
+running both. Hooks left by 1.2 or 1.3 spooled raw payloads, so they are reported as
+**needing an update** rather than counting as installed.
 
 Before writing, the installer copies `settings.json` to
 `settings.json.bak-claude-deck-<timestamp>`. The edit is a text splice that leaves every
@@ -353,9 +397,18 @@ running will not emit events until they are restarted.
 ## What it reads
 
 Everything except `~/.claude/settings.json` (hook install) and `~/.claude/claude-deck/`
-(its own spools, samples and helper) is read-only. Background jobs are watched, never
-answered: there is a messaging socket at `/tmp/cc-socks/<pid>.sock`, and this app
-deliberately does not touch it.
+(its own spools, samples and helper) is read-only.
+
+"Read-only" is not quite the promise worth making, though, because the app does install
+itself and can end a dormant process. The line that actually matters is this one:
+
+> **Claude Deck never sends commands, answers questions, or approves tool use inside a
+> Claude session on your behalf.**
+
+Starting a session, focusing its window, and ending an abandoned one are lifecycle controls
+you asked for by clicking. Speaking into a session as you is a different thing, and this
+app does not do it. There is a messaging socket at `/tmp/cc-socks/<pid>.sock` that would
+allow it; it is deliberately untouched.
 
 | Path | Used for |
 |---|---|
@@ -366,8 +419,8 @@ deliberately does not touch it.
 | `~/.claude/stats-cache.json` | lifetime sessions and per-model tokens |
 | `~/.claude/jobs/<jobId>/state.json` | a background job's state, what it needs, its fan-out and token count |
 | `~/.claude/jobs/<jobId>/timeline.jsonl` | the last three progress notes, read from the end |
-| `~/.claude/claude-deck/events.jsonl` | hook events |
-| `~/.claude/claude-deck/tools.jsonl` | tool hook events, written and rotated by the spool helper |
+| `~/.claude/claude-deck/events.jsonl` | hook events, minimised — see [What it records](#what-it-records) |
+| `~/.claude/claude-deck/tools.jsonl` | tool hook events, same, written and rotated by the spool helper |
 | `~/.claude/claude-deck/usage-history.jsonl` | plan limit samples for the forecast (written) |
 | `~/.claude/claude-deck/prices.json` | token prices for the cost estimate (written with defaults, then yours) |
 | `~/.claude.json` | `cachedUsageUtilization` only: plan limit percentages, severities and reset times |
