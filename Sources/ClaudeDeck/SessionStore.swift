@@ -315,9 +315,11 @@ final class SessionStore {
             built.append(Session(
                 id: id,
                 pid: pid,
+                procStart: file.procStart,
                 name: file.name ?? file.cwd.map { ($0 as NSString).lastPathComponent } ?? String(id.prefix(8)),
                 cwd: file.cwd ?? "",
                 state: state,
+                rawStatus: file.status,
                 lastPrompt: prompts[id],
                 usage: usage,
                 contextWindow: TranscriptTail.contextWindow(

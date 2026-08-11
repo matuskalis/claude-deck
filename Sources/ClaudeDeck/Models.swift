@@ -54,9 +54,15 @@ enum SessionState: Sendable, Equatable {
 struct Session: Identifiable, Sendable, Equatable {
     var id: String
     var pid: Int32
+    /// Carried so that a pid can be re-proven immediately before anything is signalled to
+    /// it. A pid on its own is not an identity: it gets reused.
+    var procStart: String?
     var name: String
     var cwd: String
     var state: SessionState
+    /// The raw `status` from the session file. Kept because "not busy" and "known to be
+    /// idle" are different claims, and only the second one may be acted on.
+    var rawStatus: String?
     var lastPrompt: String?
     var usage: TranscriptUsage?
     var contextWindow: Int
@@ -77,8 +83,12 @@ struct Session: Identifiable, Sendable, Equatable {
     /// which would collapse the whole list the moment midnight passed.
     static let dormantAfter: TimeInterval = 12 * 3600
 
+    /// Deliberately requires `status` to say `idle` rather than merely not saying `busy`.
+    /// A session file with no status, or one written by a future version using a status
+    /// this build has never heard of, decodes as not-busy — and "I do not recognise this
+    /// state" must not become "safe to terminate".
     func isDormant(now: Date) -> Bool {
-        guard case .idle = state, let idleSince else { return false }
+        guard case .idle = state, rawStatus == "idle", let idleSince else { return false }
         return now.timeIntervalSince(idleSince) > Self.dormantAfter
     }
 

@@ -50,7 +50,27 @@ enum Launcher {
             confirmTitle: "Quit Sessions"
         ) else { return }
 
-        for session in sessions { kill(session.pid, SIGTERM) }
+        // The list backing this was read up to a refresh interval ago, and by now one of
+        // those processes may have exited and had its pid handed to something entirely
+        // unrelated. Identity is re-proven against the recorded start time here, at the
+        // last possible moment, and anything that cannot be proven is left alone rather
+        // than signalled on the strength of a stale number.
+        let proven = ProcessCheck.alive(sessions.map { (pid: $0.pid, procStart: $0.procStart) })
+        var ended = 0
+        for session in sessions where proven.contains(session.pid) {
+            // A session file with no procStart cannot be re-proven, only signal-checked,
+            // which is not enough to justify killing something.
+            guard let procStart = session.procStart, !procStart.isEmpty else { continue }
+            kill(session.pid, SIGTERM)
+            ended += 1
+        }
+
+        if ended < sessions.count {
+            alert(
+                "Quit \(ended) of \(sessions.count)",
+                "The rest could not be re-identified at the moment of quitting — they had already exited, or their session file does not record a process start time. Nothing was signalled on a pid alone."
+            )
+        }
     }
 
     private static func notFound(_ name: String) {
