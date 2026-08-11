@@ -10,8 +10,24 @@ actor EventsSpool {
 
     private var offset = 0
 
+    /// Everything this app writes about your sessions lives in one directory, and it is
+    /// the owner's business alone. The shell helper sets `umask 077`; these are the same
+    /// guarantee for the files written from Swift.
+    nonisolated static func prepareDirectory() {
+        try? FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+    }
+
+    nonisolated static func restrict(_ url: URL) {
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+
     init() {
-        try? FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
+        Self.prepareDirectory()
         if let size = Self.currentSize(), size > 5 * 1024 * 1024 {
             try? FileManager.default.removeItem(at: Self.url)
         } else {
@@ -19,8 +35,17 @@ actor EventsSpool {
         }
         // Created up front so the file watcher has something to attach to.
         if !FileManager.default.fileExists(atPath: Self.url.path) {
-            FileManager.default.createFile(atPath: Self.url.path, contents: nil)
+            FileManager.default.createFile(
+                atPath: Self.url.path,
+                contents: nil,
+                attributes: [.posixPermissions: 0o600]
+            )
         }
+        // Also tightens a spool left behind by a version that wrote it world-readable.
+        Self.restrict(Self.url)
+        Self.restrict(ToolSpool.url)
+        Self.restrict(Self.directory.appending(path: "usage-history.jsonl"))
+        Self.restrict(StatsReader.pricesURL)
     }
 
     func newEvents() -> [DeckEvent] {

@@ -320,8 +320,9 @@ actor StatsReader {
 
     private func loadPrices() {
         if Self.pricesURL.currentFileSize == nil {
-            try? FileManager.default.createDirectory(at: EventsSpool.directory, withIntermediateDirectories: true)
+            EventsSpool.prepareDirectory()
             try? Data(Prices.defaultFile.utf8).write(to: Self.pricesURL, options: .atomic)
+            EventsSpool.restrict(Self.pricesURL)
         }
 
         let stamp = Self.stamp(of: Self.pricesURL)

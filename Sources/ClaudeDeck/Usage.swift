@@ -131,8 +131,11 @@ actor UsageReader {
         let lines = samples.compactMap { try? encoder.encode($0) }
             .map { String(decoding: $0, as: UTF8.self) }
             .joined(separator: "\n")
-        try? FileManager.default.createDirectory(at: EventsSpool.directory, withIntermediateDirectories: true)
+        EventsSpool.prepareDirectory()
         try? Data((lines + "\n").utf8).write(to: Self.historyURL, options: .atomic)
+        // An atomic write replaces the file, so the mode has to be reapplied every time
+        // rather than set once when it is created.
+        EventsSpool.restrict(Self.historyURL)
     }
 
     private func forecasts(for limits: [UsageLimit]) -> [String: Date] {

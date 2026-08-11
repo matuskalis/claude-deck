@@ -148,6 +148,11 @@ struct MenuContent: View {
     private var header: some View {
         HStack(spacing: 6) {
             Text("Claude Deck").font(.system(size: 12, weight: .semibold))
+            Text(Self.version)
+                .font(.system(size: 10))
+                .foregroundStyle(.tertiary)
+                .monospacedDigit()
+                .help("Running from \(Bundle.main.bundlePath)")
             Spacer(minLength: 4)
             if store.waitingCount > 0 {
                 pill("\(store.waitingCount) waiting", .critical)
@@ -173,6 +178,13 @@ struct MenuContent: View {
                 endPoint: .bottom
             )
         )
+    }
+
+    /// Read from the bundle rather than hardcoded, so it cannot drift from Info.plist and
+    /// answers "which build is actually running" without a terminal.
+    private static var version: String {
+        let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        return short.map { "v\($0)" } ?? ""
     }
 
     private func pill(_ text: String, _ severity: Severity) -> some View {
