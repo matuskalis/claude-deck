@@ -484,9 +484,19 @@ Four things stated plainly, because they are the cost of the feature:
 - **The summaries are a model's reading of pages it fetched**, not a publisher's feed.
   Every item carries its primary-source URL; click through for anything that matters.
 
-Items are required to carry a working URL and a publication date, and the prompt says to
-drop anything that cannot supply both. Sources are restricted to vendor blogs, changelogs,
-model cards and papers — no aggregators.
+It follows **people as well as tools** — Boris Cherny, Cat Wu, Karpathy, Simon Willison,
+Mitchell Hashimoto and others alongside Anthropic, OpenAI, Cursor and Copilot. Who it follows
+lives in `~/.claude/claude-deck/news-topics.txt`, written with defaults on first use and never
+rewritten after that, so adding or dropping a name does not mean rebuilding the app.
+
+Two kinds of source count and nothing else: an organisation's own publishing, or a named
+person's **own words** — their blog, their talk, their repository, their post. Not somebody's
+write-up of what they said. No aggregators, no reporting on the reporting, no "reportedly".
+For a person the prompt prefers something they wrote or built over a personnel announcement,
+because where someone works is rarely the interesting part.
+
+Items must carry a working URL and a publication date, and the prompt drops anything that
+cannot supply both.
 
 ## Launch at login
 

@@ -132,12 +132,69 @@ actor NewsStore {
         return URL(fileURLWithPath: path)
     }
 
-    private static let prompt = """
-    Find recent, verifiable news about AI coding assistants and the models behind them: \
-    Anthropic and Claude Code, OpenAI and Codex, Google and Gemini CLI, Cursor, GitHub Copilot.
+    static var topicsURL: URL { EventsSpool.directory.appending(path: "news-topics.txt") }
 
-    Use official primary sources only: vendor blogs, engineering posts, changelogs, release \
-    notes, model cards, research papers. No aggregators, no speculation, no rumour posts.
+    /// Who the tab is about. Kept in a file next to the prices for the same reason: it is a
+    /// list of preferences, and rebuilding an app is a silly way to change one.
+    static let defaultTopics = """
+    # Who and what Claude Deck reads about. One per line, blank lines and # comments ignored.
+    # Edit freely — this file is yours, and is only rewritten if you delete it.
+
+    # The tools
+    Anthropic and Claude Code
+    OpenAI and Codex
+    Google and Gemini CLI
+    Cursor
+    GitHub Copilot
+
+    # The people building and thinking about them
+    Boris Cherny
+    Cat Wu
+    Andrej Karpathy
+    Simon Willison
+    Mitchell Hashimoto
+    Armin Ronacher
+    Steve Yegge
+    Amjad Masad
+    Guillermo Rauch
+
+    """
+
+    func topics() -> String {
+        if Self.topicsURL.currentFileSize == nil {
+            EventsSpool.prepareDirectory()
+            try? Data(Self.defaultTopics.utf8).write(to: Self.topicsURL, options: .atomic)
+            EventsSpool.restrict(Self.topicsURL)
+        }
+        let text = (try? String(contentsOf: Self.topicsURL, encoding: .utf8)) ?? Self.defaultTopics
+        let lines = text
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("#") }
+        return lines.isEmpty ? "Anthropic and Claude Code" : lines.joined(separator: "\n")
+    }
+
+    static func prompt(topics: String) -> String {
+    """
+    Find recent, verifiable news about AI coding assistants, the models behind them, and the \
+    people building and writing about them. Cover these, and weight whichever have actually \
+    done something recently rather than giving each one a turn:
+
+    \(topics)
+
+    Two kinds of source count, and nothing else:
+
+    1. An organisation's own publishing: vendor blogs, engineering posts, changelogs, release \
+    notes, model cards, research papers.
+    2. A named person's own words: their blog, their talk, their repository, their post. What \
+    they said, not somebody's write-up of what they said.
+
+    No aggregators, no news sites reporting on either of the above, no speculation, no rumour, \
+    no "X is reportedly". For a person, prefer something they wrote or built over a personnel \
+    announcement; where someone works is rarely the interesting part.
+
+    For an item about a person, put their name in "source". For an organisation, the \
+    organisation's name.
 
     Only items published in the last 90 days. If you cannot establish both a publication \
     date and a working URL for an item, leave it out entirely.
@@ -145,7 +202,7 @@ actor NewsStore {
     Output STRICTLY a JSON array, no prose, no code fences. Each element:
     {
       "title": "short factual headline, max 80 chars",
-      "source": "organisation name",
+      "source": "the person's name, or the organisation's",
       "url": "direct link to the primary source",
       "published": "YYYY-MM-DD",
       "plain": "2 sentences, no jargon at all, what it means for someone who writes code daily",
@@ -155,6 +212,7 @@ actor NewsStore {
 
     Return at most 8 items, newest first. Nothing else.
     """
+    }
 
     func load() -> NewsFeed {
         guard let data = try? Data(contentsOf: Self.url),
@@ -195,10 +253,11 @@ actor NewsStore {
     }
 
     private func run(executable: URL, model: String?, generatedAt: Date) throws -> NewsFeed {
+        let prompt = Self.prompt(topics: topics())
         let process = Process()
         process.executableURL = executable
         process.arguments = [
-            "-p", Self.prompt,
+            "-p", prompt,
             "--output-format", "json",
             "--allowed-tools", "WebSearch", "WebFetch",
             // A measured run takes 20 turns and about 90 cents. The cap is a backstop
