@@ -59,6 +59,36 @@ struct NewsTests {
         }
     }
 
+    @Test("the spawned environment keeps what the CLI needs to stay logged in")
+    func environmentKeepsLogin() {
+        let environment = NewsStore.environment(for: URL(fileURLWithPath: "/somewhere/bin/claude"))
+
+        // The regression this exists for: a hand-built environment of HOME and PATH alone
+        // makes the CLI report "Not logged in · Please run /login" and exit 1, because the
+        // account lives in the Keychain and is looked up by USER.
+        #expect(environment["USER"]?.isEmpty == false)
+        #expect(environment["HOME"] == NSHomeDirectory())
+        #expect(environment["PATH"]?.contains("/somewhere/bin") == true)
+        // Inherited rather than constructed, so anything else the CLI reads arrives too.
+        #expect(environment.count > 3)
+    }
+
+    @Test("a directory already on PATH is not appended again")
+    func environmentDoesNotRepeatPath() {
+        func entries(_ path: String?, _ directory: String) -> Int {
+            (path ?? "").split(separator: ":").count { $0 == Substring(directory) }
+        }
+        let inherited = ProcessInfo.processInfo.environment["PATH"]
+
+        // Already present: the count must not move.
+        let known = NewsStore.environment(for: URL(fileURLWithPath: "/usr/bin/claude"))
+        #expect(entries(known["PATH"], "/usr/bin") == entries(inherited, "/usr/bin"))
+
+        // Not present: appended exactly once.
+        let novel = NewsStore.environment(for: URL(fileURLWithPath: "/opt/nowhere/bin/claude"))
+        #expect(entries(novel["PATH"], "/opt/nowhere/bin") == 1)
+    }
+
     @Test("the prompt carries the topics and keeps its source rules")
     func promptComposition() {
         let prompt = NewsStore.prompt(topics: "Boris Cherny\nCursor")

@@ -111,6 +111,27 @@ actor NewsStore {
         return fromLoginShell()
     }
 
+    /// Inherited, not built from scratch.
+    ///
+    /// Handing the CLI a hand-picked environment of HOME and PATH looked tidy and broke
+    /// login: the account is stored in the Keychain and looked up by `$USER`, so a process
+    /// without it reports "Not logged in · Please run /login" and exits 1, having spent
+    /// nothing and explained nothing. Inheriting means anything else the CLI reads —
+    /// proxies, certificate bundles, locale — arrives too.
+    static func environment(for executable: URL) -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        environment["HOME"] = NSHomeDirectory()
+        // Belt and braces: a launch context that somehow lacks USER would fail the same way.
+        if environment["USER"]?.isEmpty ?? true { environment["USER"] = NSUserName() }
+
+        let directory = executable.deletingLastPathComponent().path
+        let base = environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+        if !base.split(separator: ":").contains(Substring(directory)) {
+            environment["PATH"] = base + ":" + directory
+        }
+        return environment
+    }
+
     private static func fromLoginShell() -> URL? {
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         guard FileManager.default.isExecutableFile(atPath: shell) else { return nil }
@@ -264,11 +285,7 @@ actor NewsStore {
             // against a search loop quietly spending a great deal more than that.
             "--max-turns", "30",
         ] + (model.map { ["--model", $0] } ?? [])
-        // A GUI app's environment is nearly empty, and the CLI needs at least these.
-        process.environment = [
-            "HOME": NSHomeDirectory(),
-            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:\(executable.deletingLastPathComponent().path)",
-        ]
+        process.environment = Self.environment(for: executable)
         process.standardInput = FileHandle.nullDevice
         let output = Pipe()
         let errors = Pipe()
@@ -291,11 +308,20 @@ actor NewsStore {
         let problem = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         process.waitUntilExit()
 
-        guard process.terminationStatus == 0 else {
-            throw RefreshError.failed(problem.isEmpty ? "claude exited with status \(process.terminationStatus)" : problem)
-        }
-
         let envelope = try? JSONDecoder().decode(Envelope.self, from: data)
+
+        guard process.terminationStatus == 0, envelope?.isError != true else {
+            // The CLI reports what went wrong inside its own JSON and leaves stderr empty,
+            // so "exited with status 1" was all this used to be able to say. "Not logged in
+            // · Please run /login" is the thing worth putting in front of someone.
+            let reported = envelope?.result?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let stderr = problem.trimmingCharacters(in: .whitespacesAndNewlines)
+            throw RefreshError.failed(
+                reported?.nilIfEmpty
+                    ?? stderr.nilIfEmpty
+                    ?? "claude exited with status \(process.terminationStatus)"
+            )
+        }
         guard let text = envelope?.result, let items = Self.items(in: text) else { throw RefreshError.unreadable }
 
         let feed = NewsFeed(generatedAt: generatedAt, items: items, costUSD: envelope?.totalCostUsd)
@@ -319,9 +345,15 @@ actor NewsStore {
 private struct Envelope: Decodable {
     var result: String?
     var totalCostUsd: Double?
+    var isError: Bool?
 
     enum CodingKeys: String, CodingKey {
         case result
         case totalCostUsd = "total_cost_usd"
+        case isError = "is_error"
     }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
