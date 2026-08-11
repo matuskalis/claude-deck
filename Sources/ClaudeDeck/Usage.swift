@@ -49,7 +49,7 @@ struct UsageSnapshot: Sendable, Equatable {
 actor UsageReader {
     private static let configURL = URL(fileURLWithPath: NSHomeDirectory()).appending(path: ".claude.json")
 
-    private static let historyURL = EventsSpool.directory.appending(path: "usage-history.jsonl")
+    private static var historyURL: URL { EventsSpool.directory.appending(path: "usage-history.jsonl") }
     /// Enough for a couple of weeks of samples at one every fetch.
     private static let maxSamples = 400
 

@@ -19,6 +19,9 @@ jobs:
 
       - run: swift --version
 
+      - name: Test
+        run: swift test
+
       - name: Build the app bundle
         run: make build
 

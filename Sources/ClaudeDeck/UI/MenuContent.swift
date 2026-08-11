@@ -188,14 +188,21 @@ struct MenuContent: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                if store.hooksInstalled {
+                if store.hooksAreStale {
+                    Label("Hooks need updating", systemImage: "arrow.triangle.2.circlepath")
+                        .foregroundStyle(Severity.warning.color)
+                } else if store.hooksInstalled {
                     Label("Hooks installed", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Severity.normal.color)
                 } else {
                     Label("Hooks not installed", systemImage: "exclamationmark.circle")
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                if store.hooksInstalled || store.hooksAreStale {
+                    Button("Remove") { store.removeHooks() }
+                        .controlSize(.small)
+                }
                 Button(store.hooksInstalled ? "Reinstall" : "Install hooks") {
                     store.installHooks()
                 }
@@ -203,10 +210,27 @@ struct MenuContent: View {
             }
             .font(.system(size: 11))
 
+            if store.hooksAreStale {
+                Text("Hooks from an earlier version are still installed, and they record whole prompts and tool inputs. Reinstall replaces them with ones that record only what this menu shows.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Severity.warning.color)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Text("Hooks are read when a session starts, so already-running sessions report nothing until they are restarted.")
                 .font(.system(size: 10))
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                Text("Stores session ids, tool names and prompt-permission text in ~/.claude/claude-deck.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 4)
+                Button("Clear data") { store.clearLocalData() }
+                    .controlSize(.small)
+            }
 
             if !Installer.isInstalled {
                 HStack {

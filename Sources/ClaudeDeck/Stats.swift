@@ -93,7 +93,7 @@ struct StatsSnapshot: Sendable, Equatable {
 /// stats screen is opened, and a live tail of transcripts. The tail starts the day after
 /// the cache was computed, so one scan both feeds today and tops the cache up to now.
 actor StatsReader {
-    static let pricesURL = EventsSpool.directory.appending(path: "prices.json")
+    static var pricesURL: URL { EventsSpool.directory.appending(path: "prices.json") }
 
     private static let chunkSize = 256 * 1024
     private static let assistantMarker = Data("\"type\":\"assistant\"".utf8)

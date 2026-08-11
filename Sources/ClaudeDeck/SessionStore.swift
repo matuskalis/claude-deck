@@ -6,6 +6,8 @@ import Observation
 final class SessionStore {
     private(set) var sessions: [Session] = []
     private(set) var hooksInstalled = false
+    /// Hooks are present, but from a version that recorded more than this one does.
+    private(set) var hooksAreStale = false
     private(set) var notificationsBlocked = false
     private(set) var installError: String?
     private(set) var recentProjects: [String] = []
@@ -197,12 +199,48 @@ final class SessionStore {
 
     func installHooks() {
         do {
-            try HookInstaller.install()
+            // Replace rather than add: a version that changes what the hooks record has to
+            // take the old ones out, or both keep firing.
+            try HookInstaller.reinstall()
             installError = nil
         } catch {
             installError = error.localizedDescription
         }
+        refreshHookState()
+    }
+
+    func removeHooks() {
+        guard Launcher.confirm(
+            "Remove Claude Deck's hooks?",
+            "They are taken out of ~/.claude/settings.json, which is backed up first, and anything you added yourself is left where it is. The deck keeps working; it just stops seeing permission prompts, finished turns and tool activity.",
+            confirmTitle: "Remove Hooks"
+        ) else { return }
+
+        do {
+            try HookInstaller.remove()
+            installError = nil
+        } catch {
+            installError = error.localizedDescription
+        }
+        refreshHookState()
+    }
+
+    /// Everything the app has ever written about your sessions, in one button.
+    func clearLocalData() {
+        guard Launcher.confirm(
+            "Delete Claude Deck's local data?",
+            "Removes the spooled hook events, the tool log and the usage samples from ~/.claude/claude-deck. Your token prices are kept, and nothing under ~/.claude that Claude Code owns is touched.",
+            confirmTitle: "Delete"
+        ) else { return }
+
+        for url in [EventsSpool.url, ToolSpool.url, EventsSpool.directory.appending(path: "usage-history.jsonl")] {
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+
+    private func refreshHookState() {
         hooksInstalled = HookInstaller.isInstalled
+        hooksAreStale = HookInstaller.hasStaleCommands
     }
 
     // MARK: - Refresh
@@ -217,6 +255,7 @@ final class SessionStore {
             let projects = await history.recentProjects(limit: 8)
             let oneMillion = TranscriptTail.oneMillionConfigured()
             let installed = HookInstaller.isInstalled
+            let stale = HookInstaller.hasStaleCommands
             await self.apply(
                 scan: scan.live,
                 runningJobIds: scan.runningJobIds,
@@ -224,7 +263,8 @@ final class SessionStore {
                 prompts: prompts,
                 projects: projects,
                 oneMillion: oneMillion,
-                hooksInstalled: installed
+                hooksInstalled: installed,
+                hooksAreStale: stale
             )
         }
     }
@@ -266,11 +306,13 @@ final class SessionStore {
         prompts: [String: String],
         projects: [String],
         oneMillion: Bool,
-        hooksInstalled: Bool
+        hooksInstalled: Bool,
+        hooksAreStale: Bool
     ) {
         refreshing = false
         oneMillionConfigured = oneMillion
         self.hooksInstalled = hooksInstalled
+        self.hooksAreStale = hooksAreStale
         sessionIdsStartedToday = startedToday
         if self.runningJobIds != runningJobIds {
             self.runningJobIds = runningJobIds

@@ -4,8 +4,9 @@ import Foundation
 /// Only lines appended after launch are reported, so a stale spool never replays
 /// old notifications.
 actor EventsSpool {
-    static let directory = URL(fileURLWithPath: NSHomeDirectory()).appending(path: ".claude/claude-deck")
-    static let url = directory.appending(path: "events.jsonl")
+    /// Redirected by the tests; see `HookInstaller.settingsURL`.
+    nonisolated(unsafe) static var directory = URL(fileURLWithPath: NSHomeDirectory()).appending(path: ".claude/claude-deck")
+    static var url: URL { directory.appending(path: "events.jsonl") }
 
     private var offset = 0
 
@@ -58,7 +59,7 @@ actor EventsSpool {
 /// holding; that rewinds this reader and replays the tail. Harmless — a replayed
 /// PreToolUse only re-sets a label the next PostToolUse clears.
 actor ToolSpool {
-    static let url = EventsSpool.directory.appending(path: "tools.jsonl")
+    static var url: URL { EventsSpool.directory.appending(path: "tools.jsonl") }
 
     private var offset = 0
 
