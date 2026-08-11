@@ -21,12 +21,14 @@ enum ChangeKind: String, Sendable {
         }
     }
 
-    /// Whether the line survives the simplified view. Fixes are the bulk of any changelog
-    /// and almost never change how you work, so they become a count instead.
-    var isNoteworthy: Bool {
+    /// How far the detail slider has to be pushed before this kind of line appears.
+    /// Fixes are the bulk of any changelog — 53% of entries here — and almost never change
+    /// how you work, so they sit at the far end.
+    var tier: Int {
         switch self {
-        case .added, .changed, .removed, .other: true
-        case .fixed, .improved: false
+        case .added, .changed, .removed, .other: 0
+        case .improved: 1
+        case .fixed: 2
         }
     }
 
@@ -49,8 +51,8 @@ struct Release: Identifiable, Sendable, Equatable {
     var version: String
     var entries: [ChangelogEntry]
 
-    var noteworthy: [ChangelogEntry] { entries.filter(\.kind.isNoteworthy) }
-    var quietCount: Int { entries.count - noteworthy.count }
+    func shown(upTo tier: Int) -> [ChangelogEntry] { entries.filter { $0.kind.tier <= tier } }
+    func hiddenCount(upTo tier: Int) -> Int { entries.count { $0.kind.tier > tier } }
 }
 
 /// Reads the changelog Claude Code already keeps at ~/.claude/cache/changelog.md.

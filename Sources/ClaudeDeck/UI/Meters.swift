@@ -141,6 +141,35 @@ struct Sparkline: View {
     }
 }
 
+/// A labelled slider sized for a menu bar panel: what it controls on the left, where it
+/// currently sits on the right, ticks underneath.
+///
+/// Stepped rather than continuous wherever the underlying thing is a set of named states,
+/// so the handle lands on a stop instead of between two of them.
+struct StopSlider: View {
+    let title: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    var step: Double = 1
+    let caption: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 4)
+                Text(caption)
+                    .font(.system(size: 10))
+                    .monospacedDigit()
+            }
+            Slider(value: $value, in: range, step: step)
+                .controlSize(.mini)
+        }
+    }
+}
+
 /// Four rising bars, the ones filled being the ones the link quality earns.
 struct WifiBars: View {
     let bars: Int

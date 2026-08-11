@@ -10,12 +10,13 @@ struct NewsSection: View {
     let worstLimit: UsageLimit?
     let refresh: () -> Void
 
-    @AppStorage("news.technical") private var technical = false
-    @AppStorage("news.days") private var days = 30
+    @AppStorage("news.detail") private var detail = 0.0
+    @AppStorage("news.age") private var age = 30.0
 
-    private static let ranges: [(label: String, days: Int)] = [
-        ("24h", 1), ("7d", 7), ("30d", 30), ("90d", 90),
-    ]
+    private static let detailNames = ["Plain", "Balanced", "Technical"]
+
+    private var depth: Int { Int(detail.rounded()) }
+    private var days: Int { max(1, Int(age.rounded())) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -26,26 +27,24 @@ struct NewsSection: View {
     }
 
     private var controls: some View {
-        VStack(spacing: 5) {
-            Picker("", selection: $technical) {
-                Text("Plain").tag(false)
-                Text("Technical").tag(true)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-
-            Picker("", selection: $days) {
-                ForEach(Self.ranges, id: \.days) { range in
-                    Text(range.label).tag(range.days)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+        VStack(spacing: 7) {
+            StopSlider(
+                title: "Detail",
+                value: $detail,
+                range: 0...2,
+                caption: Self.detailNames[min(depth, 2)]
+            )
+            // Continuous rather than stepped: the cache holds ninety days of dated items,
+            // so any cut-off in that span is a real one and none of them costs a fetch.
+            StopSlider(
+                title: "How far back",
+                value: $age,
+                range: 1...90,
+                caption: days == 1 ? "24 hours" : "\(days) days"
+            )
         }
-        .controlSize(.small)
-        .font(.system(size: 10))
         .padding(.horizontal, 12)
-        .padding(.vertical, 7)
+        .padding(.vertical, 8)
     }
 
     @ViewBuilder
@@ -105,7 +104,7 @@ struct NewsSection: View {
             .foregroundStyle(.tertiary)
             .monospacedDigit()
 
-            Text(technical ? item.technical : item.plain)
+            Text(item.summary(depth: depth))
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

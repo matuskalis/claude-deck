@@ -6,9 +6,20 @@ struct NewsItem: Identifiable, Codable, Sendable, Equatable {
     var url: String
     var published: String
     var plain: String
+    /// Optional because a cache written before the middle depth existed still has to load.
+    var balanced: String?
     var technical: String
 
     var id: String { url }
+
+    /// 0 plain, 1 balanced, 2 technical. Falls back rather than showing an empty panel.
+    func summary(depth: Int) -> String {
+        switch depth {
+        case 0: plain
+        case 1: balanced ?? plain
+        default: technical
+        }
+    }
 
     var date: Date? {
         let formatter = DateFormatter()
@@ -81,8 +92,9 @@ actor NewsStore {
       "source": "organisation name",
       "url": "direct link to the primary source",
       "published": "YYYY-MM-DD",
-      "plain": "2 sentences, no jargon, what it means for someone who writes code daily",
-      "technical": "3-4 sentences, precise, include numbers, model names, benchmarks or API details where they exist"
+      "plain": "2 sentences, no jargon at all, what it means for someone who writes code daily",
+      "balanced": "2-3 sentences for a working developer: name the feature, the model and the practical consequence, but no benchmark tables",
+      "technical": "3-4 sentences, precise, include version numbers, model names, benchmarks, limits or API details where they exist"
     }
 
     Return at most 8 items, newest first. Nothing else.

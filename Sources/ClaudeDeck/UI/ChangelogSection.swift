@@ -7,10 +7,13 @@ struct ChangelogSection: View {
     let releases: [Release]
     let installedVersion: String?
 
-    @AppStorage("changelog.simplified") private var simplified = true
-    @AppStorage("changelog.depth") private var depth = 5
+    @AppStorage("changelog.detail") private var detail = 0.0
+    @AppStorage("changelog.releases") private var count = 5.0
 
-    private static let depths = [5, 20, 60]
+    private static let detailNames = ["Highlights", "Notable", "Everything"]
+
+    private var tier: Int { Int(detail.rounded()) }
+    private var releaseCount: Int { max(1, Int(count.rounded())) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -27,43 +30,40 @@ struct ChangelogSection: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 10) {
-                        ForEach(releases.prefix(depth)) { release in
+                        ForEach(releases.prefix(releaseCount)) { release in
                             entry(release)
                         }
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                 }
-                .frame(maxHeight: 420)
+                .frame(maxHeight: 400)
             }
         }
     }
 
     private var controls: some View {
-        VStack(spacing: 5) {
-            Picker("", selection: $simplified) {
-                Text("Simplified").tag(true)
-                Text("Full").tag(false)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-
-            Picker("", selection: $depth) {
-                ForEach(Self.depths, id: \.self) { count in
-                    Text("\(count) releases").tag(count)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+        VStack(spacing: 7) {
+            StopSlider(
+                title: "Detail",
+                value: $detail,
+                range: 0...2,
+                caption: Self.detailNames[min(tier, 2)]
+            )
+            StopSlider(
+                title: "How far back",
+                value: $count,
+                range: 1...Double(max(2, min(120, releases.count))),
+                caption: "\(releaseCount) release\(releaseCount == 1 ? "" : "s")"
+            )
         }
-        .controlSize(.small)
-        .font(.system(size: 10))
         .padding(.horizontal, 12)
-        .padding(.vertical, 7)
+        .padding(.vertical, 8)
     }
 
     private func entry(_ release: Release) -> some View {
-        let shown = simplified ? release.noteworthy : release.entries
+        let shown = release.shown(upTo: tier)
+        let hidden = release.hiddenCount(upTo: tier)
         return VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 Text(release.version)
@@ -78,8 +78,8 @@ struct ChangelogSection: View {
                         .foregroundStyle(Severity.normal.color)
                 }
                 Spacer(minLength: 4)
-                if simplified, release.quietCount > 0 {
-                    Text("+\(release.quietCount) fixes")
+                if hidden > 0 {
+                    Text("+\(hidden) more")
                         .font(.system(size: 9))
                         .foregroundStyle(.tertiary)
                         .monospacedDigit()
@@ -87,7 +87,7 @@ struct ChangelogSection: View {
             }
 
             if shown.isEmpty {
-                Text(simplified ? "Fixes only." : "No entries.")
+                Text(hidden > 0 ? "Nothing at this level of detail." : "No entries.")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
             }
@@ -101,7 +101,7 @@ struct ChangelogSection: View {
                     Text(strip(line.text, of: line.kind))
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
-                        .lineLimit(simplified ? 2 : nil)
+                        .lineLimit(tier == 0 ? 2 : nil)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }

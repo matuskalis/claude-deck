@@ -86,9 +86,16 @@ credential**, by asking the Claude Code already installed and logged in on this 
 Refresh runs a separate headless `claude -p` session that reads the vendors' own release
 notes and blogs, and caches what it finds.
 
-Two controls, which is the whole interface: **Plain / Technical**, and **24h / 7d / 30d /
-90d**. Both summaries are written in the same run and stored per item, so switching between
-them is free — the model is asked once and answers twice, rather than being asked again.
+Two sliders, which is the whole interface.
+
+**Detail** — Plain, Balanced, Technical. All three summaries are written in the same run and
+stored per item, so moving the slider costs nothing: the model is asked once and answers
+three times, rather than being asked again. Plain carries no jargon, Balanced names the
+feature and its consequence, Technical keeps version numbers, limits and benchmarks.
+
+**How far back** — continuous, 24 hours to 90 days. Continuous rather than stepped because
+the cache holds ninety days of dated items, so every cut-off in that span is a real one and
+none of them triggers a fetch.
 
 Four things stated plainly, because they are the cost of the feature:
 
@@ -113,16 +120,17 @@ A second tab reads the changelog Claude Code already keeps at
 Claude Code itself. **No network, no key, no summarising:** the entries are already written,
 one line each, by the people who made the change. The release you are running is tagged.
 
-Two controls, because the file has exactly two useful axes.
+Two sliders, because the file has exactly two useful axes.
 
-**Simplified / Full.** Of those 4318 entries, 53% begin "Fixed" and another 9% "Improved".
-Simplified keeps what changes how you work — Added, Changed, Removed, and lines that do not
-start with a verb — and collapses the rest to a count per release. Over twenty releases that
-is 146 lines instead of 488. Full shows everything, unwrapped.
+**Detail** — Highlights, Notable, Everything. Of those 4318 entries, 53% begin "Fixed" and
+another 9% "Improved". Highlights keeps only what changes how you work: Added, Changed,
+Removed, and lines that do not start with a verb. Notable adds the improvements, Everything
+adds the fixes, and whatever is held back is counted beside the version number. Over twenty
+releases Highlights is 146 lines instead of 488.
 
-**How far back.** 5, 20 or 60 releases. Releases rather than days because **the file carries
-no dates** — only version headings — so any "last 24 hours" control would be inventing
-information the source does not have.
+**How far back** — 1 to 120 releases, capped at however many the file holds. Releases rather
+than days because **the changelog carries no dates**, only version headings, so a "last 24
+hours" control would be inventing information the source does not have.
 
 The parse is stat-gated and only runs when the menu is opened: half a megabyte is not worth
 re-reading on a timer when nothing about it changes while nobody is looking.
