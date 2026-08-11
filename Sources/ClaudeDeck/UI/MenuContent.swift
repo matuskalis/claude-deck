@@ -6,6 +6,7 @@ struct MenuContent: View {
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var search = ""
     @State private var showDormant = false
+    @AppStorage("menu.tab") private var tab = Tab.deck
 
     private var filtered: [Session] {
         guard !search.isEmpty else { return store.sessions }
@@ -17,8 +18,42 @@ struct MenuContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
+
+            Picker("", selection: $tab) {
+                Text("Deck").tag(Tab.deck)
+                Text("What's new").tag(Tab.changelog)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .controlSize(.small)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 7)
+
             Divider()
 
+            if tab == .changelog {
+                ChangelogSection(releases: store.releases, installedVersion: store.installedVersion)
+            } else {
+                deck
+            }
+
+            Divider()
+            footer
+        }
+        .frame(width: 360)
+        .onAppear {
+            store.menuOpened()
+            launchAtLogin = SMAppService.mainApp.status == .enabled
+        }
+    }
+
+    enum Tab: String {
+        case deck
+        case changelog
+    }
+
+    private var deck: some View {
+        VStack(alignment: .leading, spacing: 0) {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 VStack(alignment: .leading, spacing: 0) {
                     if store.sessions.isEmpty {
@@ -67,13 +102,6 @@ struct MenuContent: View {
             StatsSection(stats: store.stats)
             Divider()
             launcher
-            Divider()
-            footer
-        }
-        .frame(width: 360)
-        .onAppear {
-            store.menuOpened()
-            launchAtLogin = SMAppService.mainApp.status == .enabled
         }
     }
 

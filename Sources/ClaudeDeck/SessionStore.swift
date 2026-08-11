@@ -15,11 +15,16 @@ final class SessionStore {
     private(set) var usage = UsageSnapshot()
     private(set) var wifi = WifiStatus()
     private(set) var jobs: [Job] = []
+    private(set) var releases: [Release] = []
+    /// The newest Claude Code version seen among live sessions, used to mark which release
+    /// in the changelog is the one actually running.
+    private(set) var installedVersion: String?
 
     @ObservationIgnored private let transcripts = TranscriptTail()
     @ObservationIgnored private let statsReader = StatsReader()
     @ObservationIgnored private let usageReader = UsageReader()
     @ObservationIgnored private let jobsReader = JobsReader()
+    @ObservationIgnored private let changelogReader = ChangelogReader()
     @ObservationIgnored private let history = HistoryTail()
     @ObservationIgnored private let spool = EventsSpool()
     @ObservationIgnored private let toolSpool = ToolSpool()
@@ -129,6 +134,16 @@ final class SessionStore {
         refreshMeters()
         loadUsage(for: sessions.map(\.id))
         Task { notificationsBlocked = await notifier.isBlocked() }
+        // Only when the menu is opened: the file is half a megabyte and nothing about it
+        // changes while nobody is looking.
+        Task.detached(priority: .utility) { [changelogReader] in
+            let releases = await changelogReader.releases()
+            await self.apply(releases: releases)
+        }
+    }
+
+    private func apply(releases: [Release]) {
+        self.releases = releases
     }
 
     // MARK: - Plan limits and Wi-Fi
@@ -314,6 +329,10 @@ final class SessionStore {
         self.hooksInstalled = hooksInstalled
         self.hooksAreStale = hooksAreStale
         sessionIdsStartedToday = startedToday
+        // Numeric compare, or 2.1.9 sorts above 2.1.10.
+        installedVersion = scan.compactMap(\.version).max {
+            $0.compare($1, options: .numeric) == .orderedAscending
+        }
         if self.runningJobIds != runningJobIds {
             self.runningJobIds = runningJobIds
             for index in jobs.indices { jobs[index].running = runningJobIds.contains(jobs[index].id) }

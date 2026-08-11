@@ -79,6 +79,27 @@ you build it locally the bundle carries no quarantine attribute, so Gatekeeper d
 stand in the way — `make install` and open it. It is ad-hoc signed, which is enough for
 local use and not enough to distribute, which is fine, because it is not distributed.
 
+## What's new
+
+A second tab reads the changelog Claude Code already keeps at
+`~/.claude/cache/changelog.md` — 360 releases and 4318 entries on this machine, refreshed by
+Claude Code itself. **No network, no key, no summarising:** the entries are already written,
+one line each, by the people who made the change. The release you are running is tagged.
+
+Two controls, because the file has exactly two useful axes.
+
+**Simplified / Full.** Of those 4318 entries, 53% begin "Fixed" and another 9% "Improved".
+Simplified keeps what changes how you work — Added, Changed, Removed, and lines that do not
+start with a verb — and collapses the rest to a count per release. Over twenty releases that
+is 146 lines instead of 488. Full shows everything, unwrapped.
+
+**How far back.** 5, 20 or 60 releases. Releases rather than days because **the file carries
+no dates** — only version headings — so any "last 24 hours" control would be inventing
+information the source does not have.
+
+The parse is stat-gated and only runs when the menu is opened: half a megabyte is not worth
+re-reading on a timer when nothing about it changes while nobody is looking.
+
 ## Dormant sessions
 
 A machine that has been used for a week accumulates terminal tabs with a live but
@@ -423,6 +444,7 @@ allow it; it is deliberately untouched.
 | `~/.claude/claude-deck/tools.jsonl` | tool hook events, same, written and rotated by the spool helper |
 | `~/.claude/claude-deck/usage-history.jsonl` | plan limit samples for the forecast (written) |
 | `~/.claude/claude-deck/prices.json` | token prices for the cost estimate (written with defaults, then yours) |
+| `~/.claude/cache/changelog.md` | the What's new tab, parsed when the menu opens |
 | `~/.claude.json` | `cachedUsageUtilization` only: plan limit percentages, severities and reset times |
 
 Session files are not always removed when a session dies, so each PID is validated with
