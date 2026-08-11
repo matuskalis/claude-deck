@@ -12,9 +12,19 @@ and what today has cost. It watches background jobs, which have no window to loo
 notifies you when a session finishes, blocks, or dies on a rate limit, takes you back to
 the terminal a session is running in, and starts new ones.
 
+Three tabs:
+
+| | |
+|---|---|
+| **Deck** | sessions, background jobs, plan limits, Wi-Fi, today's spend |
+| **Changelog** | what changed in Claude Code, from the file it already keeps on disk |
+| **News** | what changed across the other AI coding tools, summarised on demand |
+
 ```
 ┌────────────────────────────────────────────┐
-│ Claude Deck    1 waiting 1 blocked  2 busy │
+│ Claude Deck v1.7.1  1 waiting 1 blocked 2 ▮│
+│    ( Deck )  Changelog   News              │
+│────────────────────────────────────────────│
 │ ◐ shiftfix   opus    waiting: Bash approval│
 │ ● fix-shorts-water…  Bash 4m12s  ◕ 72%     │
 │   ~/projects/shorts-engine  "fix the…"     │
@@ -45,12 +55,32 @@ the terminal a session is running in, and starts new ones.
 │ ╭────╯ ╰──────╯  ╰─╮   ╭───                │
 │ Aug 03   last 7 days      Aug 09           │
 │────────────────────────────────────────────│
-│ Launch Claude in…                          │
-│   shorts-engine            [New] [Continue]│
-│   Browse folder…                           │
+│ Launch Claude in…          [Browse folder…]│
 │────────────────────────────────────────────│
-│ ✓ Hooks installed          [Reinstall]     │
+│ ✓ Hooks installed  [Remove] [Reinstall]    │
+│ Stores session ids…           [Clear data] │
 │ Launch at login ☐                Quit ⌘Q   │
+└────────────────────────────────────────────┘
+```
+
+The other two tabs are the same panel with two sliders at the top of it:
+
+```
+┌────────────────────────────────────────────┐
+│      Deck    Changelog   ( News )          │
+│────────────────────────────────────────────│
+│ Detail                          Balanced   │
+│ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓●───────────────────────   │
+│ How far back                     30 days   │
+│ ▓▓▓▓▓▓▓▓▓▓▓●───────────────────────────    │
+│────────────────────────────────────────────│
+│ Anthropic launches self-hosted environments│
+│ claude.com · 2026-08-06                    │
+│ Claude Code can now run on your own servers│
+│ instead of Anthropic's cloud, keeping code │
+│ and secrets inside your network.           │
+│────────────────────────────────────────────│
+│ as of 10:33  last cost $0.88     [Refresh] │
 └────────────────────────────────────────────┘
 ```
 
@@ -78,62 +108,6 @@ There is no signed download, and there will not be one: this is built from sourc
 you build it locally the bundle carries no quarantine attribute, so Gatekeeper does not
 stand in the way — `make install` and open it. It is ad-hoc signed, which is enough for
 local use and not enough to distribute, which is fine, because it is not distributed.
-
-## News
-
-The one place the app reaches past the disk — and it does so **without ever holding a
-credential**, by asking the Claude Code already installed and logged in on this machine.
-Refresh runs a separate headless `claude -p` session that reads the vendors' own release
-notes and blogs, and caches what it finds.
-
-Two sliders, which is the whole interface.
-
-**Detail** — Plain, Balanced, Technical. All three summaries are written in the same run and
-stored per item, so moving the slider costs nothing: the model is asked once and answers
-three times, rather than being asked again. Plain carries no jargon, Balanced names the
-feature and its consequence, Technical keeps version numbers, limits and benchmarks.
-
-**How far back** — continuous, 24 hours to 90 days. Continuous rather than stepped because
-the cache holds ninety days of dated items, so every cut-off in that span is a real one and
-none of them triggers a fetch.
-
-Four things stated plainly, because they are the cost of the feature:
-
-- **It spends your plan usage.** A measured run: 20 turns, 143 seconds, **$0.88**. The
-  panel prints what the last one cost, and refresh is a button — never a timer, never on
-  launch.
-- **It refuses when a limit is already critical.** The rest of this app exists to show how
-  close those limits are; a news panel is not what the last of a weekly allowance is for.
-- **It does not speak into any session of yours.** A fresh `claude -p` is its own
-  conversation. The boundary below still holds.
-- **The summaries are a model's reading of pages it fetched**, not a publisher's feed.
-  Every item carries its primary-source URL; click through for anything that matters.
-
-Items are required to carry a working URL and a publication date, and the prompt says to
-drop anything that cannot supply both. Sources are restricted to vendor blogs, changelogs,
-model cards and papers — no aggregators.
-
-## What's new
-
-A second tab reads the changelog Claude Code already keeps at
-`~/.claude/cache/changelog.md` — 360 releases and 4318 entries on this machine, refreshed by
-Claude Code itself. **No network, no key, no summarising:** the entries are already written,
-one line each, by the people who made the change. The release you are running is tagged.
-
-Two sliders, because the file has exactly two useful axes.
-
-**Detail** — Highlights, Notable, Everything. Of those 4318 entries, 53% begin "Fixed" and
-another 9% "Improved". Highlights keeps only what changes how you work: Added, Changed,
-Removed, and lines that do not start with a verb. Notable adds the improvements, Everything
-adds the fixes, and whatever is held back is counted beside the version number. Over twenty
-releases Highlights is 146 lines instead of 488.
-
-**How far back** — 1 to 120 releases, capped at however many the file holds. Releases rather
-than days because **the changelog carries no dates**, only version headings, so a "last 24
-hours" control would be inventing information the source does not have.
-
-The parse is stat-gated and only runs when the menu is opened: half a megabyte is not worth
-re-reading on a timer when nothing about it changes while nobody is looking.
 
 ## Dormant sessions
 
@@ -399,6 +373,62 @@ The `$/h` beside today's estimate is measured from the day's first assistant mes
 than from midnight, so a day that started at 14:00 does not report a quarter of its real
 rate.
 
+## Changelog
+
+This tab reads the changelog Claude Code already keeps at
+`~/.claude/cache/changelog.md` — 360 releases and 4318 entries on this machine, refreshed by
+Claude Code itself. **No network, no key, no summarising:** the entries are already written,
+one line each, by the people who made the change. The release you are running is tagged.
+
+Two sliders, because the file has exactly two useful axes.
+
+**Detail** — Highlights, Notable, Everything. Of those 4318 entries, 53% begin "Fixed" and
+another 9% "Improved". Highlights keeps only what changes how you work: Added, Changed,
+Removed, and lines that do not start with a verb. Notable adds the improvements, Everything
+adds the fixes, and whatever is held back is counted beside the version number. Over twenty
+releases Highlights is 146 lines instead of 488.
+
+**How far back** — 1 to 120 releases, capped at however many the file holds. Releases rather
+than days because **the changelog carries no dates**, only version headings, so a "last 24
+hours" control would be inventing information the source does not have.
+
+The parse is stat-gated and only runs when the menu is opened: half a megabyte is not worth
+re-reading on a timer when nothing about it changes while nobody is looking.
+
+## News
+
+The one place the app reaches past the disk — and it does so **without ever holding a
+credential**, by asking the Claude Code already installed and logged in on this machine.
+Refresh runs a separate headless `claude -p` session that reads the vendors' own release
+notes and blogs, and caches what it finds.
+
+Two sliders, which is the whole interface.
+
+**Detail** — Plain, Balanced, Technical. All three summaries are written in the same run and
+stored per item, so moving the slider costs nothing: the model is asked once and answers
+three times, rather than being asked again. Plain carries no jargon, Balanced names the
+feature and its consequence, Technical keeps version numbers, limits and benchmarks.
+
+**How far back** — continuous, 24 hours to 90 days. Continuous rather than stepped because
+the cache holds ninety days of dated items, so every cut-off in that span is a real one and
+none of them triggers a fetch.
+
+Four things stated plainly, because they are the cost of the feature:
+
+- **It spends your plan usage.** A measured run: 20 turns, 143 seconds, **$0.88**. The
+  panel prints what the last one cost, and refresh is a button — never a timer, never on
+  launch.
+- **It refuses when a limit is already critical.** The rest of this app exists to show how
+  close those limits are; a news panel is not what the last of a weekly allowance is for.
+- **It does not speak into any session of yours.** A fresh `claude -p` is its own
+  conversation. The boundary below still holds.
+- **The summaries are a model's reading of pages it fetched**, not a publisher's feed.
+  Every item carries its primary-source URL; click through for anything that matters.
+
+Items are required to carry a working URL and a publication date, and the prompt says to
+drop anything that cannot supply both. Sources are restricted to vendor blogs, changelogs,
+model cards and papers — no aggregators.
+
 ## Launch at login
 
 `SMAppService.mainApp` behind a checkbox. It only registers when the app is running from
@@ -480,7 +510,8 @@ allow it; it is deliberately untouched.
 | `~/.claude/claude-deck/tools.jsonl` | tool hook events, same, written and rotated by the spool helper |
 | `~/.claude/claude-deck/usage-history.jsonl` | plan limit samples for the forecast (written) |
 | `~/.claude/claude-deck/prices.json` | token prices for the cost estimate (written with defaults, then yours) |
-| `~/.claude/cache/changelog.md` | the What's new tab, parsed when the menu opens |
+| `~/.claude/cache/changelog.md` | the Changelog tab, parsed when the menu opens |
+| `~/.claude/claude-deck/news.json` | the News tab's cache (written) |
 | `~/.claude.json` | `cachedUsageUtilization` only: plan limit percentages, severities and reset times |
 
 Session files are not always removed when a session dies, so each PID is validated with
