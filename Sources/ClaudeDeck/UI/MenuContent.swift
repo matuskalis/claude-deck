@@ -6,7 +6,7 @@ struct MenuContent: View {
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var search = ""
     @State private var showDormant = false
-    @AppStorage("menu.tab") private var tab = Tab.deck
+    @AppStorage("menu.tab") private var tab = Tab.sessions
 
     private var filtered: [Session] {
         guard !search.isEmpty else { return store.sessions }
@@ -20,7 +20,8 @@ struct MenuContent: View {
             header
 
             Picker("", selection: $tab) {
-                Text("Deck").tag(Tab.deck)
+                Text("Sessions").tag(Tab.sessions)
+                Text("Usage").tag(Tab.usage)
                 Text("Changelog").tag(Tab.changelog)
                 Text("News").tag(Tab.news)
             }
@@ -32,26 +33,31 @@ struct MenuContent: View {
 
             Divider()
 
-            switch tab {
-            case .changelog:
-                ChangelogSection(releases: store.releases, installedVersion: store.installedVersion)
-            case .news:
-                NewsSection(
-                    feed: store.news,
-                    refreshing: store.newsRefreshing,
-                    error: store.newsError,
-                    worstLimit: store.usage.worst,
-                    refresh: { store.refreshNews() }
-                )
-            case .deck:
-                deck
+            // Every tab gets the same box and fills it. Nothing scrolls: a page that does
+            // not fit is a page that is trying to be two pages.
+            VStack(alignment: .leading, spacing: 0) {
+                switch tab {
+                case .sessions: sessionsTab
+                case .usage: usageTab
+                case .changelog:
+                    ChangelogSection(releases: store.releases, installedVersion: store.installedVersion)
+                case .news:
+                    NewsSection(
+                        feed: store.news,
+                        refreshing: store.newsRefreshing,
+                        error: store.newsError,
+                        worstLimit: store.usage.worst,
+                        refresh: { store.refreshNews() }
+                    )
+                }
             }
+            .frame(height: Self.contentHeight, alignment: .top)
 
             Divider()
             footer
         }
-        // News is the one tab with prose in it rather than readings, and prose needs the
-        // room. The panel widens for it and goes back afterwards.
+        // Height is shared so the panel never jumps; width is not, because prose needs the
+        // room and readings look stretched in it.
         .frame(width: tab == .news ? 540 : 360)
         .onAppear {
             store.menuOpened()
@@ -59,72 +65,98 @@ struct MenuContent: View {
         }
     }
 
+    /// One box, every tab. Chosen so the fullest page — sessions with jobs under it — fits
+    /// without cutting anything.
+    static let contentHeight: CGFloat = 410
+
     enum Tab: String {
-        case deck
+        case sessions
+        case usage
         case changelog
         case news
     }
 
-    /// The whole tab scrolls, not just the session list. With sessions, jobs, limits, the
-    /// machine row and stats stacked, the column is taller than the panel a menu bar item is
-    /// given, and anything past the fold was simply unreachable.
-    private var deck: some View {
-        ScrollView {
+    /// What is running, and what is waiting on you.
+    private var sessionsTab: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let live = filtered.filter { !$0.isDormant(now: context.date) }
+            let dormant = filtered.filter { $0.isDormant(now: context.date) }
+            let shown = live.prefix(Self.visibleSessions)
+
             VStack(alignment: .leading, spacing: 0) {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
+                if store.sessions.isEmpty {
+                    Text("No active sessions")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                } else {
+                    if store.sessions.count > 6 {
+                        TextField("Filter", text: $search)
+                            .textFieldStyle(.roundedBorder)
+                            .controlSize(.small)
+                            .font(.system(size: 11))
+                            .padding(.horizontal, 12)
+                            .padding(.top, 6)
+                    }
+
                     VStack(alignment: .leading, spacing: 0) {
-                        if store.sessions.isEmpty {
-                            Text("No active sessions")
-                                .font(.system(size: 12))
-                                .foregroundStyle(.secondary)
+                        ForEach(shown) { session in
+                            SessionRow(session: session, now: context.date)
+                        }
+                        if live.count > shown.count {
+                            Text("+\(live.count - shown.count) more running — filter to reach them")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
                                 .padding(.horizontal, 12)
-                                .padding(.vertical, 10)
-                        } else {
-                            if store.sessions.count > 6 {
-                                TextField("Filter", text: $search)
-                                    .textFieldStyle(.roundedBorder)
-                                    .controlSize(.small)
-                                    .font(.system(size: 11))
-                                    .padding(.horizontal, 12)
-                                    .padding(.top, 6)
-                            }
-
-                            VStack(alignment: .leading, spacing: 0) {
-                                ForEach(filtered.filter { !$0.isDormant(now: context.date) }) { session in
-                                    SessionRow(session: session, now: context.date)
-                                }
-
-                                let dormant = filtered.filter { $0.isDormant(now: context.date) }
-                                if !dormant.isEmpty {
-                                    dormantGroup(dormant, now: context.date)
-                                }
-                            }
-                            .padding(.vertical, 3)
+                                .padding(.vertical, 2)
                         }
-
-                        if !store.jobs.isEmpty {
-                            Divider()
-                            JobsSection(jobs: store.jobs, now: context.date)
+                        if !dormant.isEmpty {
+                            dormantGroup(dormant, now: context.date)
                         }
+                    }
+                    .padding(.vertical, 3)
+                }
 
-                        Divider()
-                        UsageSection(usage: store.usage, wifi: store.wifi, now: context.date)
-                        Divider()
-                        ActivitySection(activity: store.activity)
+                if !store.jobs.isEmpty {
+                    Divider()
+                    JobsSection(jobs: Array(store.jobs.prefix(Self.visibleJobs)), now: context.date)
+                    if store.jobs.count > Self.visibleJobs {
+                        Text("+\(store.jobs.count - Self.visibleJobs) more background jobs")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 4)
                     }
                 }
 
-                Divider()
-                StatsSection(stats: store.stats)
+                Spacer(minLength: 0)
                 Divider()
                 launcher
             }
         }
-        .frame(maxHeight: 560)
     }
 
-    /// Terminal tabs left open days ago are most of the list on a normal machine, and they
-    /// push the two sessions actually doing something off the top of it.
+    /// What it is costing: the plan, then the machine, then the tokens.
+    private var usageTab: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                UsageSection(usage: store.usage, wifi: store.wifi, now: context.date)
+            }
+            Divider()
+            ActivitySection(activity: store.activity)
+            Divider()
+            StatsSection(stats: store.stats)
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// Caps rather than a scrollbar. Both are generous enough that hitting one means
+    /// something is worth attending to, not that the panel is too small.
+    private static let visibleSessions = 6
+    private static let visibleJobs = 2
+
+
     private func dormantGroup(_ dormant: [Session], now: Date) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {

@@ -1,7 +1,9 @@
 import SwiftUI
 
-/// Ecosystem news, summarised by the Claude Code on this machine and cached, with the two
-/// controls that decide how it reads: how technical, and how far back.
+/// Ecosystem news, summarised by the Claude Code on this machine and cached.
+///
+/// Master and detail: headlines above, the selected one written out below. A fixed panel
+/// cannot scroll, and eight items at three sentences each was never going to fit.
 struct NewsSection: View {
     let feed: NewsFeed
     let refreshing: Bool
@@ -12,18 +14,45 @@ struct NewsSection: View {
 
     @AppStorage("news.detail") private var detail = 0.0
     @AppStorage("news.age") private var age = 30.0
+    @State private var selected: String?
 
     private static let detailNames = ["Plain", "Balanced", "Technical"]
+    private static let visibleItems = 6
 
     private var depth: Int { Int(detail.rounded()) }
     private var days: Int { max(1, Int(age.rounded())) }
+    private var current: NewsItem? { visible.first { $0.id == selected } ?? visible.first }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             controls
             Divider()
-            content
+
+            if let error {
+                message(error, Severity.critical.color)
+            } else if feed.items.isEmpty {
+                message("Nothing fetched yet. Refresh asks the Claude Code on this machine to read the vendors' own release notes and blogs, and caches what it finds.", nil)
+            } else if visible.isEmpty {
+                message("Nothing in the last \(days) day\(days == 1 ? "" : "s"). \(feed.items.count) item\(feed.items.count == 1 ? "" : "s") cached over 90 days.", nil)
+            } else {
+                headlines
+                Divider()
+                article
+            }
+
+            Spacer(minLength: 0)
+            Divider()
+            footer
         }
+    }
+
+    private func message(_ text: String, _ color: Color?) -> some View {
+        Text(text)
+            .font(.system(size: 10))
+            .foregroundStyle(color.map { AnyShapeStyle($0) } ?? AnyShapeStyle(.tertiary))
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
     }
 
     private var controls: some View {
@@ -34,8 +63,6 @@ struct NewsSection: View {
                 range: 0...2,
                 caption: Self.detailNames[min(depth, 2)]
             )
-            // Continuous rather than stepped: the cache holds ninety days of dated items,
-            // so any cut-off in that span is a real one and none of them costs a fetch.
             StopSlider(
                 title: "How far back",
                 value: $age,
@@ -47,67 +74,64 @@ struct NewsSection: View {
         .padding(.vertical, 8)
     }
 
-    @ViewBuilder
-    private var content: some View {
-        let shown = visible
-
-        ScrollView {
-            VStack(alignment: .leading, spacing: 9) {
-                if let error {
-                    Text(error)
-                        .font(.system(size: 10))
-                        .foregroundStyle(Severity.critical.color)
-                        .fixedSize(horizontal: false, vertical: true)
+    private var headlines: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(visible.prefix(Self.visibleItems)) { item in
+                let isCurrent = item.id == current?.id
+                Button {
+                    selected = item.id
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(item.title)
+                            .font(.system(size: 11, weight: isCurrent ? .semibold : .regular))
+                            .lineLimit(1)
+                        Spacer(minLength: 6)
+                        Text(item.published)
+                            .font(.system(size: 9))
+                            .foregroundStyle(.tertiary)
+                            .monospacedDigit()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(isCurrent ? Color.primary.opacity(0.07) : .clear)
+                    .contentShape(Rectangle())
                 }
-
-                if feed.items.isEmpty, !refreshing, error == nil {
-                    Text("Nothing fetched yet. Refresh asks the Claude Code on this machine to read the vendors' own release notes and blogs, and caches what it finds.")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else if shown.isEmpty, !feed.items.isEmpty {
-                    Text("Nothing in the last \(days) day\(days == 1 ? "" : "s"). \(feed.items.count) item\(feed.items.count == 1 ? "" : "s") cached over 90 days.")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                ForEach(shown) { item in
-                    article(item)
-                }
+                .buttonStyle(.plain)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-        }
-        .frame(maxHeight: 570)
 
-        Divider()
-        footer
+            if visible.count > Self.visibleItems {
+                Text("+\(visible.count - Self.visibleItems) older — narrow the range")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 2)
+            }
+        }
+        .padding(.vertical, 3)
     }
 
-    private func article(_ item: NewsItem) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Link(destination: URL(string: item.url) ?? URL(fileURLWithPath: "/")) {
-                Text(item.title)
-                    .font(.system(size: 11, weight: .medium))
-                    .multilineTextAlignment(.leading)
+    @ViewBuilder
+    private var article: some View {
+        if let item = current {
+            VStack(alignment: .leading, spacing: 3) {
+                Link(destination: URL(string: item.url) ?? URL(fileURLWithPath: "/")) {
+                    HStack(spacing: 4) {
+                        Text(item.host)
+                        Image(systemName: "arrow.up.forward.square")
+                    }
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+
+                Text(item.summary(depth: depth))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .buttonStyle(.plain)
-
-            HStack(spacing: 5) {
-                Text(item.host)
-                Text("·")
-                Text(item.published)
-            }
-            .font(.system(size: 9))
-            .foregroundStyle(.tertiary)
-            .monospacedDigit()
-
-            Text(item.summary(depth: depth))
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
         }
     }
 
@@ -141,6 +165,7 @@ struct NewsSection: View {
             Text(note)
                 .font(.system(size: 9))
                 .foregroundStyle(blocked ? AnyShapeStyle(Severity.critical.color) : AnyShapeStyle(.tertiary))
+                .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 12)
@@ -154,9 +179,9 @@ struct NewsSection: View {
 
     private var note: String {
         if let worstLimit, blocked {
-            return "\(worstLimit.title) is at \(worstLimit.percent)%. Refresh is held back until it resets, rather than spending what is left of it on a news panel."
+            return "\(worstLimit.title) is at \(worstLimit.percent)%. Refresh is held back until it resets."
         }
-        return "Refresh runs a separate headless Claude Code session on this machine and spends your plan usage. Summaries are written by a model from the pages it fetched; open the link to check anything that matters."
+        return "Refresh runs a headless Claude Code session here and spends your plan usage. Summaries are a model's reading of the pages it fetched; open the link to check anything that matters."
     }
 
     private var visible: [NewsItem] {

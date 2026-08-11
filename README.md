@@ -12,18 +12,27 @@ and what today has cost. It watches background jobs, which have no window to loo
 notifies you when a session finishes, blocks, or dies on a rate limit, takes you back to
 the terminal a session is running in, and starts new ones.
 
-Three tabs:
+Four tabs, all the same height, none of them scrolling:
 
 | | |
 |---|---|
-| **Deck** | sessions, background jobs, plan limits, Wi-Fi, today's spend |
+| **Sessions** | what is running, what is waiting on you, background jobs |
+| **Usage** | plan limits, Wi-Fi, what the machine is spending, today's tokens |
 | **Changelog** | what changed in Claude Code, from the file it already keeps on disk |
 | **News** | what changed across the other AI coding tools, summarised on demand |
 
+**Nothing scrolls.** A page that does not fit its box is a page trying to be two pages, so
+the deck was split rather than made scrollable: sessions and jobs on one tab, everything
+about cost on another. The two list-shaped tabs are master and detail — headlines above, the
+selected one written out below — because 360 releases and eight articles were never going to
+fit a fixed panel, and paging through them by dragging would have been worse than reading
+them. Sessions cap at six and jobs at two, with the overflow counted; hitting either cap
+means something is worth attending to, not that the panel is too small.
+
 ```
 ┌────────────────────────────────────────────┐
-│ Claude Deck v1.8.0  1 waiting 1 blocked 2 ▮│
-│    ( Deck )  Changelog   News              │
+│ Claude Deck v1.9.0  1 waiting 1 blocked 2 ▮│
+│  (Sessions)  Usage   Changelog   News      │
 │────────────────────────────────────────────│
 │ ◐ shiftfix   opus    waiting: Bash approval│
 │ ● fix-shorts-water…  Bash 4m12s  ◕ 72%     │
@@ -36,34 +45,56 @@ Three tabs:
 │   V rade je 44 starých klipov. Kam s 43?   │
 │   Odložiť staré · Miešať · Pridať za staré │
 │   ✦ Normalize collapse loudness      9m41s │
-│ ● bear-data-h2     2 running, 1 queued 114k│
-│   branch ready, local server running       │
-│────────────────────────────────────────────│
-│ Plan limits                ▂▄▆█ good 162Mb │
-│ Session         resets in 4h02m        24% │
-│ ▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
-│ Weekly          resets in 11h29m       82% │
-│ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░ │
-│ on course to hit 100% Tue 03:04            │
-│ Weekly · Fable                         27% │
-│ ▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
-│ as of 21:30, refreshed by Claude Code      │
-│────────────────────────────────────────────│
-│ Machine        fix-shorts-water… busiest    │
-│ CPU    Memory   ~/.claude   Free            │
-│ 38%    1.4 GB   1.2 GB      589 GB          │
-│────────────────────────────────────────────│
-│ Today 6 sessions · 1.2M tok · ~$4.10 · $0.9│
-│ Lifetime 239 sessions · 6.8B  Jul 20+live  │
-│      ╭─╮      ╭──╮                         │
-│ ╭────╯ ╰──────╯  ╰─╮   ╭───                │
-│ Aug 03   last 7 days      Aug 09           │
 │────────────────────────────────────────────│
 │ Launch Claude in…          [Browse folder…]│
 │────────────────────────────────────────────│
 │ ✓ Hooks installed  [Remove] [Reinstall]    │
 │ Stores session ids…           [Clear data] │
 │ Launch at login ☐                Quit ⌘Q   │
+└────────────────────────────────────────────┘
+```
+
+The Usage tab, same box, same footer:
+
+```
+┌────────────────────────────────────────────┐
+│ Plan limits                ▂▄▆█ good 162Mb │
+│ Session         resets in 4h02m        24% │
+│ ▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
+│ Weekly          resets in 11h29m       82% │
+│ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░ │
+│ on course to hit 100% Tue 03:04            │
+│────────────────────────────────────────────│
+│ Machine        fix-shorts-water… busiest   │
+│ CPU    Memory   ~/.claude   Free           │
+│ 38%    1.4 GB   1.2 GB      589 GB         │
+│────────────────────────────────────────────│
+│ Today 6 sessions · 1.2M tok · ~$4.10 · $0.9│
+│ Lifetime 239 sessions · 6.8B  Jul 20+live  │
+│      ╭─╮      ╭──╮                         │
+│ ╭────╯ ╰──────╯  ╰─╮   ╭───                │
+└────────────────────────────────────────────┘
+```
+
+News and Changelog are master and detail, sliders on top:
+
+```
+┌────────────────────────────────────────────┐
+│ Detail                          Balanced   │
+│ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓●───────────────────────   │
+│ How far back                     30 days   │
+│ ▓▓▓▓▓▓▓▓▓▓▓●───────────────────────────    │
+│────────────────────────────────────────────│
+│ Anthropic launches self-hosted…  2026-08-06│
+│ OpenAI to retire GPT-5.4 in Codex 2026-07-31│
+│ Cursor 3.11 adds side chats      2026-07-10│
+│────────────────────────────────────────────│
+│ claude.com ↗                               │
+│ Claude Code can now run on your own servers│
+│ instead of Anthropic's cloud, keeping code │
+│ and secrets inside your network.           │
+│────────────────────────────────────────────│
+│ as of 10:33  last cost $0.88     [Refresh] │
 └────────────────────────────────────────────┘
 ```
 
@@ -406,7 +437,8 @@ This tab reads the changelog Claude Code already keeps at
 Claude Code itself. **No network, no key, no summarising:** the entries are already written,
 one line each, by the people who made the change. The release you are running is tagged.
 
-Two sliders, because the file has exactly two useful axes.
+Master and detail: seven releases listed, the selected one written out beneath. Two
+sliders.
 
 **Detail** — Highlights, Notable, Everything. Of those 4318 entries, 53% begin "Fixed" and
 another 9% "Improved". Highlights keeps only what changes how you work: Added, Changed,
@@ -414,9 +446,10 @@ Removed, and lines that do not start with a verb. Notable adds the improvements,
 adds the fixes, and whatever is held back is counted beside the version number. Over twenty
 releases Highlights is 146 lines instead of 488.
 
-**How far back** — 1 to 120 releases, capped at however many the file holds. Releases rather
-than days because **the changelog carries no dates**, only version headings, so a "last 24
-hours" control would be inventing information the source does not have.
+**How far back** — moves the window of seven through all 360 releases, and is captioned
+with the oldest release it reaches. Releases rather than days because **the changelog
+carries no dates**, only version headings, so a "last 24 hours" control would be inventing
+information the source does not have.
 
 The parse is stat-gated and only runs when the menu is opened: half a megabyte is not worth
 re-reading on a timer when nothing about it changes while nobody is looking.
@@ -428,7 +461,7 @@ credential**, by asking the Claude Code already installed and logged in on this 
 Refresh runs a separate headless `claude -p` session that reads the vendors' own release
 notes and blogs, and caches what it finds.
 
-Two sliders, which is the whole interface.
+Master and detail: up to six headlines, the selected one written out beneath. Two sliders.
 
 **Detail** — Plain, Balanced, Technical. All three summaries are written in the same run and
 stored per item, so moving the slider costs nothing: the model is asked once and answers
