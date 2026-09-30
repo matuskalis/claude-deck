@@ -53,6 +53,7 @@ cleanup() {
   for pid in $PIDS; do kill "$pid" 2>/dev/null || true; done
   # Only what the demo copy saved, under its own identifier. Never the installed app's.
   defaults delete "$DEMO_ID" >/dev/null 2>&1 || true
+  rm -f "$HOME/Library/Preferences/$DEMO_ID.plist"
   case "$DEMO_HOME" in */claude-deck-demo.*) rm -rf "$DEMO_HOME" ;; esac
 }
 trap cleanup EXIT INT TERM
@@ -206,7 +207,7 @@ hook() { printf '"%s":[{"hooks":[{"type":"command","command":"\\"$HOME/.claude/c
 DEMO_APP="$DEMO_HOME/Applications/Claude Deck.app"
 ditto "$APP_SRC" "$DEMO_APP"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $DEMO_ID" "$DEMO_APP/Contents/Info.plist"
-codesign --force --sign - "$DEMO_APP" >/dev/null 2>&1
+signing=$(codesign --force --sign - "$DEMO_APP" 2>&1) || { echo "$signing" >&2; exit 1; }
 
 export CFFIXED_USER_HOME="$DEMO_HOME" CLAUDE_DECK_DEMO_HOME="$DEMO_HOME"
 [ -n "$SNAPSHOT_DIR" ] && export CLAUDE_DECK_SNAPSHOT="$SNAPSHOT_DIR"
