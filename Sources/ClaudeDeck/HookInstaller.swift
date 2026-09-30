@@ -295,9 +295,10 @@ enum HookInstaller {
     # never written anywhere. Delete this file and the hooks in ~/.claude/settings.json
     # to stop it entirely.
     #
-    # A PreToolUse hook that exits non-zero blocks the tool call it fired for. Nothing a
-    # menu bar app does is worth stopping someone's Bash call, so there is no `set -e`,
-    # every step tolerates failure, and the script always exits 0.
+    # A PreToolUse hook that exits with code 2 blocks the tool call it fired for, and any
+    # other failure prints a notice. Nothing a menu bar app does is worth stopping someone's
+    # Bash call or cluttering their session, so there is no `set -e`, every step tolerates
+    # failure, and the script always exits 0.
     umask 077
     dir="$HOME/.claude/claude-deck"
     file="$dir/$1.jsonl"
@@ -333,7 +334,7 @@ enum HookInstaller {
           | tr '\\n\\r\\t' '   ' \\
           | LC_ALL=C tr -d '\\000-\\037' \\
           | cut -c1-200 \\
-          | sed -e 's/\\\\/\\\\\\\\/g' -e 's/"/\\\\"/g')
+          | sed -e 's/ *$//' -e 's/\\\\/\\\\\\\\/g' -e 's/"/\\\\"/g')
         if [ -n "$message" ]; then
           line="$line,\\"message\\":\\"$message\\""
         fi
@@ -372,7 +373,7 @@ enum HookInstaller {
             "\(indent)    {",
             "\(indent)      \"type\": \"command\",",
             "\(indent)      \"command\": \(jsonString(command(for: name))),",
-            "\(indent)      \"timeout\": 5000",
+            "\(indent)      \"timeout\": 5",
             "\(indent)    }",
             "\(indent)  ]",
             "\(indent)}",

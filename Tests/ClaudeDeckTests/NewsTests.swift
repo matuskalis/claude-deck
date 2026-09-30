@@ -8,6 +8,8 @@ import Testing
 extension DeckTests {
     @Suite(.serialized)
     struct NewsTests {
+        init() throws { try Hermetic.reset() }
+
         private static func inSandbox(_ body: (URL) async throws -> Void) async throws {
             let root = URL(fileURLWithPath: NSTemporaryDirectory())
                 .appending(path: "claude-deck-news-\(UUID().uuidString)")

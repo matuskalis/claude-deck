@@ -256,6 +256,9 @@ actor NewsStore {
     }
 
     func refresh(generatedAt: Date) throws -> NewsFeed {
+        guard !Demo.isActive else {
+            throw RefreshError.failed("Refresh is switched off in demo mode, so nothing here spends your plan.")
+        }
         guard let executable = Self.executable() else { throw RefreshError.noClaude }
 
         do {
@@ -335,7 +338,7 @@ actor NewsStore {
 
     /// Models add prose or fences around JSON however firmly they are told not to, so the
     /// array is taken from the first bracket to the last rather than assumed to be alone.
-    private static func items(in text: String) -> [NewsItem]? {
+    static func items(in text: String) -> [NewsItem]? {
         guard let start = text.firstIndex(of: "["), let end = text.lastIndex(of: "]"), start < end else { return nil }
         let slice = String(text[start...end])
         return try? JSONDecoder().decode([NewsItem].self, from: Data(slice.utf8))

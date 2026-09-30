@@ -35,6 +35,7 @@ struct WifiStatus: Sendable, Equatable {
     }
 
     nonisolated static func read() -> WifiStatus {
+        if Demo.isActive { return Demo.wifi }
         guard let interface = CWWiFiClient.shared().interface() else { return WifiStatus() }
         let rssi = interface.rssiValue()
         // A powered-on interface that is not associated reports an RSSI of 0.
