@@ -1,6 +1,11 @@
 .build/
 dist/
 .DS_Store
+.swiftpm/
+*.log
+.env*
+!.env.example
 
 # Working notes. The README is the public document; context.md is the local one.
 context.md
+CLAUDE.local.md
