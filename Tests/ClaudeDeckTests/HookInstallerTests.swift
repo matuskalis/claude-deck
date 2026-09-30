@@ -8,6 +8,8 @@ import Testing
 extension DeckTests {
     @Suite(.serialized)
     struct HookInstallerTests {
+        init() throws { try Hermetic.reset() }
+
         /// Each test gets its own settings file and spool directory; the real ones are never
         /// touched.
         private static func inSandbox(_ contents: String, _ body: (URL) throws -> Void) throws {
