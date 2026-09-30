@@ -13,16 +13,18 @@ extension DeckTests {
 
         @Test("CPU time is converted from mach ticks, not treated as nanoseconds")
         func machTicksConvertToSeconds() {
-            // Wall time measured in the same ticks the kernel reports CPU time in.
+            // One interval measured twice: in the ticks the kernel reports CPU time in, and by the
+            // wall clock. Read as nanoseconds on Apple silicon the ticks would come out about 40
+            // times too small, and converted twice about 40 times too large. Comparing the two
+            // measurements keeps the test honest on a machine that is too busy to sleep on time.
+            let wallStart = Date()
             let start = mach_absolute_time()
             usleep(100_000)
             let ticks = mach_absolute_time() - start
+            let wall = Date().timeIntervalSince(wallStart)
 
             let seconds = ActivityReader.seconds(machTicks: ticks)
-            // Sleeping takes at least the 0.1 s asked for, and on an idle machine not much more.
-            // Read as nanoseconds on Apple silicon the same ticks would come out near 0.002 s.
-            #expect(seconds >= 0.09)
-            #expect(seconds < 1.0)
+            #expect(abs(seconds - wall) <= max(0.05, wall * 0.25), "ticks said \(seconds) s, the clock said \(wall) s")
         }
 
         @Test("no ticks is no time, and the conversion is linear")
