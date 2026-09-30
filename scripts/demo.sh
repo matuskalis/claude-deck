@@ -10,9 +10,14 @@
 # (HOME does not), and CLAUDE_DECK_DEMO_HOME, which makes the app refuse to start if the
 # redirect did not take. A demo posts no notifications and never starts claude.
 #
+# CFFIXED_USER_HOME does not move saved preferences, so the copy of the app that runs here
+# gets a bundle identifier of its own. Its preferences and its launch-at-login state are
+# then separate from an installed Claude Deck's, and the script deletes them when it stops.
+#
 # The sessions are real processes (sleep), because the app checks that a session's pid is
-# alive and that its start time matches the session file. The names, prompts, token counts
-# and limits are made up.
+# alive and that its start time matches the session file. The names, prompts, token counts,
+# plan limits, Wi-Fi link and free disk space are invented. The Machine row is measured, from
+# those sleep processes.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -37,10 +42,17 @@ CLAUDE="$DEMO_HOME/.claude"
 PIDS=""
 APP_PID=""
 
+DEMO_ID=com.matuskalis.claude-deck.demo
+
 cleanup() {
   trap - EXIT INT TERM
-  [ -n "$APP_PID" ] && kill "$APP_PID" 2>/dev/null || true
+  if [ -n "$APP_PID" ]; then
+    kill "$APP_PID" 2>/dev/null || true
+    wait "$APP_PID" 2>/dev/null || true
+  fi
   for pid in $PIDS; do kill "$pid" 2>/dev/null || true; done
+  # Only what the demo copy saved, under its own identifier. Never the installed app's.
+  defaults delete "$DEMO_ID" >/dev/null 2>&1 || true
   case "$DEMO_HOME" in */claude-deck-demo.*) rm -rf "$DEMO_HOME" ;; esac
 }
 trap cleanup EXIT INT TERM
@@ -180,7 +192,7 @@ cat > "$CLAUDE/stats-cache.json" <<EOF
 EOF
 
 # Every hook the installer writes, with the exact commands, so the footer reads "Hooks installed".
-hook() { printf '"%s":[{"hooks":[{"type":"command","command":"\\"$HOME/.claude/claude-deck/spool\\" %s %s","timeout":5000}]}]' "$1" "$2" "$1"; }
+hook() { printf '"%s":[{"hooks":[{"type":"command","command":"\\"$HOME/.claude/claude-deck/spool\\" %s %s","timeout":5}]}]' "$1" "$2" "$1"; }
 {
   echo '{"model":"claude-opus-5","hooks":{'
   echo "$(hook Notification events),$(hook Stop events),$(hook StopFailure events),$(hook UserPromptSubmit events),$(hook SessionEnd events),$(hook PreToolUse tools),$(hook PostToolUse tools)"
@@ -189,12 +201,16 @@ hook() { printf '"%s":[{"hooks":[{"type":"command","command":"\\"$HOME/.claude/c
 
 # ---- start ------------------------------------------------------------------------------
 
-# Copied in as if installed, so the footer does not offer to install it.
-ditto "$APP_SRC" "$DEMO_HOME/Applications/Claude Deck.app"
+# Copied in as if installed, so the footer does not offer to install it, with a bundle identifier
+# of its own (and signed again, since the identifier is part of the signature).
+DEMO_APP="$DEMO_HOME/Applications/Claude Deck.app"
+ditto "$APP_SRC" "$DEMO_APP"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $DEMO_ID" "$DEMO_APP/Contents/Info.plist"
+codesign --force --sign - "$DEMO_APP" >/dev/null 2>&1
 
 export CFFIXED_USER_HOME="$DEMO_HOME" CLAUDE_DECK_DEMO_HOME="$DEMO_HOME"
 [ -n "$SNAPSHOT_DIR" ] && export CLAUDE_DECK_SNAPSHOT="$SNAPSHOT_DIR"
-"$DEMO_HOME/Applications/Claude Deck.app/Contents/MacOS/ClaudeDeck" &
+"$DEMO_APP/Contents/MacOS/ClaudeDeck" &
 APP_PID=$!
 
 # Hook events only count when they arrive after the app has started, as they do for real.

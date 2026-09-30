@@ -107,6 +107,7 @@ actor ActivityReader {
     }
 
     private static func freeBytes() -> Int {
+        if Demo.isActive { return Demo.freeBytes }
         let url = URL(fileURLWithPath: NSHomeDirectory())
         let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
         return Int(values?.volumeAvailableCapacityForImportantUsage ?? 0)

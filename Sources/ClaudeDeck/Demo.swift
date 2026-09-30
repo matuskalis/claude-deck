@@ -8,14 +8,21 @@ import SwiftUI
 /// figures, then starts this app against it. Two variables do that:
 ///
 /// - `CFFIXED_USER_HOME` moves `NSHomeDirectory()`, and with it every path the app reads.
-///   `HOME` does not; on macOS only this one does.
+///   `HOME` does not; on macOS only this one does. It does not move saved preferences:
+///   cfprefsd ignores it. `scripts/demo.sh` therefore gives the demo copy of the app a
+///   bundle identifier of its own, and the snapshot sets its tab where nothing is saved.
 /// - `CLAUDE_DECK_DEMO_HOME` says this is a demo, and names the directory the app must see.
 ///   If `NSHomeDirectory()` is anywhere else the redirect did not take, and the app quits
 ///   before its store reads a file, rather than show or disturb the real thing.
 ///
 /// A demo run posts no notifications and never starts `claude`, so nothing in it can spend
-/// plan usage or interrupt anyone.
+/// plan usage or interrupt anyone. The two readings that would otherwise come from the
+/// machine doing the rendering, the Wi-Fi link and free disk space, are invented values, so
+/// a picture of a demo says nothing about anyone's network or disk.
 enum Demo {
+    static let wifi = WifiStatus(present: true, connected: true, rssi: -58, noise: -92, transmitRate: 780)
+    static let freeBytes = 412 * 1_073_741_824
+
     static var home: String? {
         guard let value = getenv("CLAUDE_DECK_DEMO_HOME") else { return nil }
         let text = String(cString: value)
@@ -97,9 +104,12 @@ enum Snapshot {
         for look in looks {
             var panels: [NSBitmapImageRep] = []
             for tab in [MenuContent.Tab.sessions, .usage] {
-                UserDefaults.standard.set(tab.rawValue, forKey: "menu.tab")
+                // The argument domain wins over saved preferences and is never written to disk,
+                // so a snapshot cannot change what any copy of the app remembers.
+                UserDefaults.standard.setVolatileDomain(["menu.tab": tab.rawValue], forName: UserDefaults.argumentDomain)
                 panels.append(await render(store: store, look: look))
             }
+            UserDefaults.standard.setVolatileDomain([:], forName: UserDefaults.argumentDomain)
             let data = try compose(panels, look: look)
             try data.write(to: directory.appending(path: "hero-\(look.name).png"))
         }

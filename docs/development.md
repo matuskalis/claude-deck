@@ -56,7 +56,7 @@ There is no signed download and none is planned. The bundle is ad-hoc signed, wh
 | Hooks | the splice across layouts (exact in the usual ones, lossless in all), refusals, symlinks, the backup, the timeout, and what the helper does with hostile text: escaping, the 200 character cap, control characters, fields it must never keep, rotation |
 | News | the prompt, the topics file, the environment, pulling the list out of prose, old caches |
 | Machine | the mach-tick conversion against the wall clock, CPU against `getrusage`, the footprint |
-| Demo mode | what counts as a demo, the redirect check, the refresh switch |
+| Demo mode | what counts as a demo, the redirect check, the refresh switch, the invented Wi-Fi and disk readings, the tab override that is never saved |
 
 Not covered: the SwiftUI views (they are looked at, see [Demo mode](demo.md)), `SessionStore` (its notifier talks to `UNUserNotificationCenter`, which needs an app bundle), the actual `osascript` calls, the notification banners, `Installer`, and the `claude -p` run behind News, which spends plan usage.
 

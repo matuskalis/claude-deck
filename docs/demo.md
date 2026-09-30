@@ -20,7 +20,9 @@ Click the terminal icon in the menu bar. Ctrl-C in the terminal stops the app, e
 
 Every session is backed by a real `sleep` process, because the app checks that a session's pid is alive and that its start time matches the session file. The names, prompts, token counts and limits are made up. The model names and prices are the app's own defaults.
 
-Three things on the Usage tab and the footer come from the machine running the demo, because they are read live: the Wi-Fi link, free disk space, and the **Launch at login** checkbox. The Machine row shows the stand-in processes, so CPU is near zero and memory is a few megabytes, which is what they are.
+Two readings that would otherwise come from the machine running the demo are fixed, invented values in demo mode: the Wi-Fi link ("good, 780 Mbps") and the free disk space (412 GB). A picture of the demo therefore says nothing about anyone's network or disk. The **Launch at login** checkbox shows the state of the demo copy of the app, which is never registered, so it reads off.
+
+The Machine row is the one thing that is really measured. It reports the stand-in processes, so CPU is near zero and memory is a few megabytes, which is what they are, and `~/.claude` is the size of the demo home.
 
 The script writes hook events after the app has started, the way they arrive for real. The readers only report lines appended after launch, so events written before it would be ignored.
 
@@ -30,12 +32,14 @@ Two environment variables, both set by the script.
 
 | Variable | Does |
 |---|---|
-| `CFFIXED_USER_HOME` | Moves `NSHomeDirectory()`, and with it every path the app reads and every preference it saves. `HOME` does not do this on macOS. |
+| `CFFIXED_USER_HOME` | Moves `NSHomeDirectory()`, and with it every path the app reads. `HOME` does not do this on macOS. It does not move saved preferences (see below). |
 | `CLAUDE_DECK_DEMO_HOME` | Marks the run as a demo and names the directory the app must see. |
 
 If the two disagree, because the redirect did not take, the app prints why and exits with status 78 before its store reads a file. A test covers the check, and it was also run by hand with mismatched directories.
 
-A demo run also posts no notifications, does not ask for notification permission, and switches off the News refresh, so nothing in it can spend plan usage or interrupt anyone. The script copies the app into the demo home first, so the footer does not offer to install it, and it kills only the processes it started.
+**Saved preferences are not moved by that variable.** cfprefsd ignores it: a probe binary run with it set wrote its preference into the real user domain, and nothing appeared under the redirected home (checked on 30 Sep 2026). So the script copies the app into the demo home, gives the copy a bundle identifier of its own, `com.matuskalis.claude-deck.demo`, and signs it again. Its saved preferences and its launch-at-login state are then separate from an installed Claude Deck's, and the script deletes the demo's preference domain when it stops. The snapshot picks the tab it renders through the argument domain, which is never written to disk.
+
+A demo run also posts no notifications, does not ask for notification permission, and switches off the News refresh, so nothing in it can spend plan usage or interrupt anyone. Because the copy sits in the demo home, the footer does not offer to install it, and the script kills only the processes it started.
 
 ## The images
 

@@ -15,7 +15,7 @@ A macOS menu bar app that shows what your Claude Code sessions are doing right n
   </picture>
 </p>
 
-<p align="center"><sub>Demo data. The panel is the real one, rendered by the app itself with <code>scripts/demo.sh --snapshot</code>; the sessions, prompts and numbers are invented. <a href="docs/demo.md">How this was made</a>.</sub></p>
+<p align="center"><sub>Demo data. The panel is the real one, rendered by the app itself with <code>scripts/demo.sh --snapshot</code>. The sessions, jobs, prompts, plan limits, token counts, Wi-Fi link and free disk space are invented. The Machine row is measured, from the stand-in processes behind the sessions. <a href="docs/demo.md">How this was made</a>.</sub></p>
 
 It works from the files Claude Code already keeps in `~/.claude`. It holds no API key, and the app itself opens no network connection.
 
@@ -38,7 +38,7 @@ A terminal icon appears in the menu bar. Click it. Three things to know on first
 
 To remove it: press **Remove** in the footer, quit, delete the app, and delete `~/.claude/claude-deck`.
 
-**No Claude Code sessions on this machine?** `make build && scripts/demo.sh` starts the app on invented data, in a throwaway home directory that is deleted when you stop it. It touches nothing under your real `~/.claude`.
+**No Claude Code sessions on this machine?** `make build && scripts/demo.sh` starts the app on invented data, in a throwaway home directory that is deleted when you stop it. It touches nothing under your real `~/.claude`, and it runs under a bundle identifier of its own, so it leaves an installed copy's preferences alone.
 
 ## What it shows
 

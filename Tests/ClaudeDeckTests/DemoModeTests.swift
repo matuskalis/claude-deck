@@ -59,6 +59,38 @@ extension DeckTests {
             }
         }
 
+        @Test("in a demo the Wi-Fi link and the free disk space are invented, not the machine's")
+        func machineReadingsAreInvented() async throws {
+            try await Self.inDemo(home: Hermetic.root.path) {
+                let wifi = WifiStatus.read()
+                #expect(wifi == Demo.wifi)
+                #expect(wifi.present && wifi.connected)
+                #expect(wifi.label == "good")
+
+                let machine = await ActivityReader().sample(sessions: [])
+                #expect(machine.freeBytes == Demo.freeBytes)
+            }
+        }
+
+        @Test("outside a demo the free disk space is measured")
+        func machineReadingsAreMeasured() async {
+            let machine = await ActivityReader().sample(sessions: [])
+            #expect(machine.freeBytes > 0)
+            #expect(machine.freeBytes != Demo.freeBytes)
+        }
+
+        @Test("the tab a snapshot renders is set in the argument domain, which overrides what is saved")
+        func tabOverrideDoesNotNeedSaving() {
+            let defaults = UserDefaults.standard
+            // removeVolatileDomain does not clear the argument domain; an empty one does.
+            defaults.setVolatileDomain(["menu.tab": "usage"], forName: UserDefaults.argumentDomain)
+            defer { defaults.setVolatileDomain([:], forName: UserDefaults.argumentDomain) }
+            #expect(defaults.string(forKey: "menu.tab") == "usage")
+
+            defaults.setVolatileDomain([:], forName: UserDefaults.argumentDomain)
+            #expect(defaults.string(forKey: "menu.tab") == nil)
+        }
+
         @Test("the news refresh refuses in a demo, before it goes looking for claude")
         func newsRefreshIsOffInADemo() async throws {
             try await Self.inDemo(home: Hermetic.root.path) {
