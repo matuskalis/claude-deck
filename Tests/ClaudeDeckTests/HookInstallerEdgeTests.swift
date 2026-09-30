@@ -135,6 +135,20 @@ extension DeckTests {
             #expect(!HookInstaller.isInstalled)
         }
 
+        @Test("every hook is written with a five second timeout, because the field is in seconds")
+        func timeoutIsInSeconds() throws {
+            try HookInstaller.install()
+
+            let root = try JSONSerialization.jsonObject(with: Data(contentsOf: Self.settings)) as? [String: Any]
+            let hooks = try #require(root?["hooks"] as? [String: [[String: Any]]])
+            #expect(hooks.count == 7)
+            for (event, matchers) in hooks {
+                let entries = matchers.flatMap { $0["hooks"] as? [[String: Any]] ?? [] }
+                #expect(entries.count == 1, "\(event)")
+                #expect(entries.first?["timeout"] as? Int == 5, "\(event)")
+            }
+        }
+
         @Test("each event is wired to the right spool: tool events to tools, the rest to events")
         func commandsTargetTheRightSpool() {
             #expect(HookInstaller.command(for: "PreToolUse").hasSuffix("spool\" tools PreToolUse"))
