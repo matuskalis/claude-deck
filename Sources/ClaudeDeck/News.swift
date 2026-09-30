@@ -256,6 +256,9 @@ actor NewsStore {
     }
 
     func refresh(generatedAt: Date) throws -> NewsFeed {
+        guard !Demo.isActive else {
+            throw RefreshError.failed("Refresh is switched off in demo mode, so nothing here spends your plan.")
+        }
         guard let executable = Self.executable() else { throw RefreshError.noClaude }
 
         do {
