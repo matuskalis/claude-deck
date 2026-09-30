@@ -28,7 +28,7 @@ scripts/demo.sh              demo mode, see demo.md
 
 ```sh
 swift build          # debug build
-swift test           # 180 tests, about 5 seconds
+swift test           # 192 tests, 3 seconds on CI
 make build           # release build, assembles dist/Claude Deck.app, signs it ad hoc
 make install         # build, then copy to ~/Applications/Claude Deck.app with ditto
 make clean
@@ -44,7 +44,7 @@ There is no signed download and none is planned. The bundle is ad-hoc signed, wh
 
 ## Tests
 
-180 tests in 19 suites, written with Swift Testing. They are about the parts that would be wrong without anyone noticing.
+192 tests in 21 suites, written with Swift Testing. They are about the parts that would be wrong without anyone noticing.
 
 | Area | What is pinned |
 |---|---|
@@ -53,7 +53,7 @@ There is no signed download and none is planned. The bundle is ad-hoc signed, wh
 | Plan limits | parsing, dates with six, three and no fractional digits, severity, every condition under which the forecast stays silent, the history file |
 | Jobs, changelog, spools, history | what counts as blocked, ordering, what is dropped, where each cursor is after a partial line, a truncation or a rotation |
 | Safety | what is dormant, pid identity against the recorded start time, launcher quoting run through `/bin/sh` |
-| Hooks | the splice, exact reversal, refusals, symlinks, the backup, the timeout, and that the helper records none of the payload |
+| Hooks | the splice across layouts (exact in the usual ones, lossless in all), refusals, symlinks, the backup, the timeout, and what the helper does with hostile text: escaping, the 200 character cap, control characters, fields it must never keep, rotation |
 | News | the prompt, the topics file, the environment, pulling the list out of prose, old caches |
 | Machine | the mach-tick conversion against the wall clock, CPU against `getrusage`, the footprint |
 | Demo mode | what counts as a demo, the redirect check, the refresh switch |

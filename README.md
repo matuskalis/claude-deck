@@ -32,7 +32,7 @@ open ~/Applications/"Claude Deck.app"
 
 A terminal icon appears in the menu bar. Click it. Three things to know on first use:
 
-- **Install hooks** in the panel footer is what makes permission prompts, finished turns and the tool each session is inside visible. Without it the list and the meters still work. The installer edits `~/.claude/settings.json` after taking a backup, and **Remove** puts the file back byte for byte. [What it records](docs/hooks-and-privacy.md).
+- **Install hooks** in the panel footer is what makes permission prompts, finished turns and the tool each session is inside visible. Without it the list and the meters still work. The installer edits `~/.claude/settings.json` after taking a backup, and **Remove** takes out exactly what was added. [What it records](docs/hooks-and-privacy.md).
 - The first time it raises a terminal window or starts a session, macOS asks for Automation permission for iTerm or Terminal.
 - **Launch at login** only works from `~/Applications` or `/Applications`, which `make install` takes care of.
 
@@ -55,18 +55,9 @@ It also notifies you when a session blocks, finishes or dies on a rate limit, ta
 
 ```mermaid
 flowchart LR
-    subgraph disk["Written by Claude Code"]
-        sessions["sessions/pid.json"]
-        transcripts["projects/**/id.jsonl"]
-        jobs["jobs/id/state.json"]
-        limits[".claude.json (plan limits)"]
-        changelog["cache/changelog.md"]
-    end
-    hooks["hooks in settings.json"] --> helper["claude-deck/spool (shell script)"]
-    helper --> spools["events.jsonl, tools.jsonl"]
-    disk --> readers["readers: stat-gated, tail-only"]
-    spools --> readers
-    readers --> store["SessionStore"] --> panel["SwiftUI panel"]
+    files["Files Claude Code writes<br/>sessions, transcripts, jobs,<br/>plan-limit cache, changelog"] --> readers
+    hooks["Seven hooks"] --> helper["Spool helper<br/>keeps 3 fields, drops the payload"] --> spool["events.jsonl<br/>tools.jsonl"] --> readers
+    readers["Readers<br/>one per file format,<br/>tail-only or stat-gated"] --> store["SessionStore"] --> panel["SwiftUI panel"]
 ```
 
 Everything is read from disk. A 3 second timer rescans `~/.claude/sessions`, file watchers pick up hook events in well under a second, and two slower timers (15 and 60 seconds) refresh the meters and the token counts. The big files are never re-read in full: a transcript is read backwards from the end in 64 KB chunks, because only its newest assistant message is needed, and the token counts read only what was appended. [The refresh model and every file it reads](docs/how-it-works.md).
@@ -75,7 +66,7 @@ Everything is read from disk. A 3 second timer rescans `~/.claude/sessions`, fil
 
 **It reads the disk and never calls an API.** The numbers come from Claude Code's own files, so there is no key to hold, leak or rotate. The cost: those files are an undocumented internal format that can change without notice, so every field is optional and anything unrecognised degrades to "unknown" instead of dropping a row. Plan limits are only as fresh as Claude Code's last fetch, and the panel prints that time under them.
 
-**Hooks record only what the menu shows.** A hook payload carries your prompt, the full tool input (a whole file, on a `Write`) and the tool result. The spool helper keeps three fields and throws the rest away, and a test pushes a payload containing a token and a private path through the real helper and asserts that neither reaches disk. The cost: hooks have to be installed into a file you own. The installer is a text splice that leaves every other byte alone, and its tests check that removing it restores the file exactly.
+**Hooks record only what the menu shows.** A hook payload carries your prompt, the full tool input (a whole file, on a `Write`) and the tool result. The spool helper keeps three fields and throws the rest away, and a test pushes a payload containing a token and a private path through the real helper and asserts that neither reaches disk. The cost: hooks have to be installed into a file you own. The installer is a text splice that leaves every other byte alone. Its tests check that removing it restores a normally formatted file byte for byte, and loses nothing in any layout.
 
 **Nothing is ever signalled on the strength of a pid.** **Quit all** on the dormant row sends `SIGTERM` (never `SIGKILL`) to sessions whose status is exactly `idle` for more than 12 hours, and re-proves each process against its recorded start time at the moment you click. A session with no status, or one this build does not recognise, is never counted as dormant. The cost: such a session never folds away and cannot be quit from the menu.
 
@@ -87,9 +78,9 @@ Measured in this repository on 30 Sep 2026, an M1 Pro running macOS 27 with a Sw
 
 | | |
 |---|---|
-| Tests | 180 in 19 suites, about 5 s; the ones that write files run against a throwaway home directory |
-| Release build | 60 s from cold, 2.3 MB ad-hoc-signed bundle |
-| Code | 28 Swift files, 5,589 lines, plus 3,095 lines of tests |
+| Tests | 192 in 21 suites; 3 s on CI, about 5 s on a quiet laptop; the ones that write files run against a throwaway home directory |
+| Release build | 45 to 60 s from cold (two runs), 2.3 MB ad-hoc-signed bundle |
+| Code | 28 Swift files, 5,589 lines, plus 3,329 lines of tests |
 | Dependencies | none |
 
 Measurements the author took against a live machine on 11 Aug 2026, not re-run here: [what the Machine row was checked against](docs/usage-tab.md#machine).
@@ -108,7 +99,7 @@ Measurements the author took against a live machine on 11 Aug 2026, not re-run h
 
 ```sh
 swift build
-swift test                                # 180 tests, about 5 s
+swift test                                # 192 tests
 make build                                # release build, assembles dist/Claude Deck.app
 scripts/demo.sh                           # the app on invented data
 scripts/demo.sh --snapshot docs/images    # regenerate the images above

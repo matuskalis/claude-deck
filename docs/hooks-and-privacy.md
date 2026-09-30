@@ -42,14 +42,14 @@ Spools are written under `umask 077` into a `0700` directory, capped at 256 KB a
 - **A text splice, not a rewrite.** A hook is added to the existing `hooks` object, or to an existing event array if you already have hooks under that name, for instance an `afplay` on `Stop`. It goes inside the same array rather than becoming a second key, because a duplicate key would be resolved differently by Node and by the app. Every other byte of the file is left as it was, so `diff` against the backup shows only the added lines.
 - **Checked before it is written.** The result has to parse, and every event has to appear exactly once.
 - **Idempotent.** Installing twice changes nothing the second time.
-- **Exactly reversible.** **Remove** takes out only what this app wrote: a matcher that carries a command mentioning the app's directory, an event array only if emptying it is what left it empty, and `hooks` itself only if it was ours alone. Install followed by remove leaves the file byte-identical, which a test asserts. Hooks you wrote yourself are never touched, in either direction.
+- **Reversible.** **Remove** takes out only what this app wrote: a matcher that carries a command mentioning the app's directory, then an event array and `hooks` itself if removal left them empty. Hooks you wrote yourself are never touched, in either direction. Install followed by remove leaves a normally formatted file (two-space, four-space or tab indentation, line feeds) byte-identical, which tests assert. A minified file, a file with Windows line endings or an empty `{}` comes back as valid JSON with the same content and some whitespace left over. An empty `hooks` object or event array that was there before the install is dropped. The backup beside the file is the exact original in every case.
 - **Upgrades replace.** **Reinstall** removes before installing, so a new version does not run beside the old one. Hooks left by versions 1.2 and 1.3 spooled raw payloads, so they are reported as needing an update instead of counting as installed.
 - **It refuses what it does not understand.** If the file is not a JSON object, or `hooks` is present but not an object, or an event is not an array, nothing is written and the menu says why.
 - **Symlinks are followed.** `settings.json` is resolved through symlinks first, so a dotfiles symlink keeps pointing at its target.
 - **No file yet.** One is created, and there is nothing to back up.
 - **The timeout is 5 seconds.** The field is in seconds. Until this was fixed the installer wrote 5000, which is about 83 minutes. It never mattered, because the helper returns in milliseconds and a timed-out command hook does not block the tool call. The installer compares commands, not timeouts, so an existing install keeps what it has until you press Reinstall.
 
-`HookInstallerTests` and `HookInstallerEdgeTests` cover all of it.
+`HookInstallerTests`, `HookInstallerEdgeTests`, `HookInstallerShapesTests` and `HookHelperTests` cover all of it. The helper tests feed it quotes, backslashes, line breaks, escape sequences, a 300 character message, a prompt and a tool input riding along with a notification, and a payload that is not JSON.
 
 ## What it reads and writes
 
