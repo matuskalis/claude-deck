@@ -334,7 +334,7 @@ enum HookInstaller {
           | tr '\\n\\r\\t' '   ' \\
           | LC_ALL=C tr -d '\\000-\\037' \\
           | cut -c1-200 \\
-          | sed -e 's/\\\\/\\\\\\\\/g' -e 's/"/\\\\"/g')
+          | sed -e 's/ *$//' -e 's/\\\\/\\\\\\\\/g' -e 's/"/\\\\"/g')
         if [ -n "$message" ]; then
           line="$line,\\"message\\":\\"$message\\""
         fi
